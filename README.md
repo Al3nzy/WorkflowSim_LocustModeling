@@ -22,12 +22,16 @@ When individual locusts sense neighbours around them, they shift from solitary f
 
 The result: a **true Pareto front** of scheduling options — not one solution, but a menu of makespan-vs-cost trade-offs — produced entirely inside WorkflowSim with zero external dependencies.
 
+> **Update (this revision):** added a standard NSGA-II baseline and a controlled ablation of the density-adaptive mixing mechanism, in response to peer review. Reported honestly: NSGA-II matches LIWSA-ML's Pareto-front quality at equal search budget and does so 1.4×–13.5× faster; the ablation finds LIWSA's richer fronts (vs. MLEAO) come from having *some* probabilistic phase mixing, not specifically from that mixing being density-driven. See `Response_to_Reviewers.pdf` in the paper repo for the full account, and the updated results table below.
+
 ---
 
 ## 📁 Repository Structure
 
 ```
 WorkflowSim_LocustModeling/
+├── sources/org/workflowsim/planning/
+│   └── NSGAIIPlanningAlgorithm.java         ← Standard NSGA-II baseline (new)
 └── examples/org/workflowsim/examples/planning/
     ├── LIWSAPlanningAlgorithmExample.java      ← LIWSA single-run example
     ├── LIWSAMLPlanningAlgorithmExample.java    ← LIWSA-ML single-run example
@@ -72,17 +76,18 @@ No TensorFlow. No PyTorch. No Python. One `.java` file.
 
 ## 📊 Key Results (20 Pegasus Benchmark Instances, 5 Families, 5 Seeds Each)
 
-| Algorithm | Hypervolume vs HEFT | Pareto Front Size | Data-Intensive Makespan |
-|-----------|--------------------:|:-----------------:|:-----------------------:|
-| HEFT | baseline (1×) | 1 | up to 18.8 days (Epigenomics 997) |
-| Min-Min | −31.0% avg | 1 | — |
-| MLEAO | +72.6% avg | 2–12 | — |
-| **LIWSA** | **+175.8% avg** | **5–30** | **−78.5% vs HEFT** |
-| **LIWSA-ML** | **+181.8% avg** | **5–29** | **−78.5% makespan, −10.0% cost** |
+| Algorithm | Mean Hypervolume vs HEFT | Pareto Front Size | Search Wall-Clock (1000-task, relative to MLEAO) |
+|-----------|-------------------------:|:------------------:|:----------------------------------------:|
+| HEFT | baseline | 1 | — (no search phase) |
+| Min-Min | −3.4% avg | 1 | — (no search phase) |
+| MLEAO | +159.7% avg | 1–26 (mean 6.25) | 1.0× |
+| LIWSA | +174.2% avg | 1–30 (mean 13.75) | 9.1× |
+| **NSGA-II** | **+181.9% avg** | **1–30 (mean 26.84)** | **0.8×** |
+| **LIWSA-ML** | **+182.9% avg** | **1–30 (mean 13.25)** | **13.2×** |
 
-On **data-intensive workflows** (Epigenomics, Inspiral at 1000 tasks), LIWSA-ML simultaneously reduces makespan **and** cost versus HEFT — constituting **true Pareto dominance**, not a trade-off.
+LIWSA-ML beats HEFT, Min-Min, and MLEAO clearly and consistently (mean hypervolume gain +9.1% over MLEAO). Against the added NSGA-II baseline at matched search budget, encoding, decoder, and warm-start seeds, the picture is closer: NSGA-II wins mean hypervolume on 14/20 instances to LIWSA-ML's 5 (margins narrow, ~1.4% on average, not significant at n=5), while running 1.4×–13.5× faster depending on workflow size — traced to the O(P²n) cost of LIWSA's density-driven solitary-phase voting vs. NSGA-II's O(P²+Pn) operators. Full account in the paper's Results §IV-F and the Response to Reviewers.
 
-On **compute-bound workflows** (Montage, CyberShake), HEFT's single solution is near-optimal on the makespan axis; LIWSA-ML still delivers 6–9 non-dominated solutions that expose cost-reduction options HEFT cannot.
+On **data-intensive workflows** (Epigenomics, Inspiral at ~1000 tasks), LIWSA-ML simultaneously reduces makespan and cost versus HEFT (e.g. Epigenomics_997: −78.5% makespan, −10.0% cost) — true Pareto dominance, not a trade-off, and a pattern all four population-based algorithms (MLEAO, LIWSA, NSGA-II, LIWSA-ML) share to some degree since it stems from a structural HEFT weakness on large file transfers, not from any one algorithm's search strategy specifically.
 
 ---
 
@@ -134,10 +139,24 @@ javac -cp .:workflowsim.jar LIWSAMLPlanningAlgorithmExample.java
 java  -cp .:workflowsim.jar org.workflowsim.examples.planning.LIWSAMLPlanningAlgorithmExample
 ```
 
-**4. Run the full benchmark** (all workflows, all algorithms, 5 seeds, CSV output):
+**4. Run the full benchmark** (all workflows, six algorithms, 5 seeds, CSV output):
 ```bash
 java -cp .:workflowsim.jar org.workflowsim.examples.planning.LIWSABenchmarkExample
-# Results written to: results/benchmark_results.csv
+# Results written to: results/benchmark_results.csv (~17 min single-threaded)
+```
+
+**4b. Or run it in batches** (useful for verification, or splitting across
+sessions — each batch computes its own workflows' hypervolume reference
+points independently, so results are identical to a single full run):
+```bash
+java -cp .:workflowsim.jar org.workflowsim.examples.planning.LIWSABenchmarkExample \
+  "Montage_25,Montage_50,Montage_100" "results/my_run.csv"
+```
+
+**4c. Or run the density ablation** (`LIWSA` vs. `LIWSA-NoDensity`, all 20 instances):
+```bash
+java -cp .:workflowsim.jar org.workflowsim.examples.planning.LIWSABenchmarkExample \
+  "" "results/my_ablation.csv" "ablation"
 ```
 
 **5. Run the HEFT baseline:**
@@ -151,18 +170,26 @@ java -cp .:workflowsim.jar org.workflowsim.examples.planning.HEFTBenchmark
 
 | Parameter | Value | Scope |
 |-----------|------:|-------|
-| Population size `P` | 30 | MLEAO, LIWSA, LIWSA-ML |
-| Generations `T_max` | 100 | MLEAO, LIWSA, LIWSA-ML |
-| Random seeds | 5 (1–5) | MLEAO, LIWSA, LIWSA-ML |
+| Population size `P` | 30 | MLEAO, LIWSA, NSGA-II, LIWSA-ML |
+| Generations `T_max` | 100 | MLEAO, LIWSA, NSGA-II, LIWSA-ML |
+| Random seeds | 5 (1–5) | MLEAO, LIWSA, NSGA-II, LIWSA-ML |
 | Neighbourhood radius `τ` | self-calibrated | LIWSA, LIWSA-ML |
 | Phase-mixing weight `λ` | 0.5 | LIWSA, LIWSA-ML |
 | Kernel parameters `F, L` | 3.0, 0.3 | LIWSA, LIWSA-ML |
 | Copy scale `α` | 1.2 | LIWSA, LIWSA-ML |
 | Min elite `δ_min` | 3 | LIWSA, LIWSA-ML |
-| Mutation rate `µ` | 0.02 | All |
+| Mutation rate `µ` | 0.02 | LIWSA, LIWSA-ML, MLEAO |
+| NSGA-II crossover prob. `p_c` | 0.9 (uniform crossover) | NSGA-II only |
+| NSGA-II mutation prob. `p_m` | 1/n (random-reset) | NSGA-II only |
 | OLS training samples `Nₛ` | 400 | LIWSA-ML only |
 | OLS seed genotypes `Nₚ` | 4 | LIWSA-ML only |
 | Softmax temperature `θ` | 0.5 | LIWSA-ML only |
+| `CONFIG_DENSITY_ABLATION` | `false` (set `true` to ablate) | LIWSA only, new |
+
+None of these were tuned via a held-out validation set distinct from the
+20 evaluation instances; see the paper's §III-E and Response to Reviewers
+(R3 Q4) for the honest account of this limitation and a partial
+overfitting cross-check against the untuned NSGA-II baseline.
 
 ---
 

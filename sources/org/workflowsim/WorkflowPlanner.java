@@ -27,6 +27,7 @@ import org.workflowsim.planning.HEFTPlanningAlgorithm;
 import org.workflowsim.planning.LIWSAMLPlanningAlgorithm;
 import org.workflowsim.planning.LIWSAPlanningAlgorithm;
 import org.workflowsim.planning.MLEAOPlanningAlgorithm;
+import org.workflowsim.planning.NSGAIIPlanningAlgorithm;
 import org.workflowsim.planning.RandomPlanningAlgorithm;
 import org.workflowsim.utils.Parameters;
 import org.workflowsim.utils.Parameters.PlanningAlgorithm;
@@ -201,6 +202,9 @@ public final class WorkflowPlanner extends SimEntity {
                 break;
             case LIWSAML:
                 planner = new LIWSAMLPlanningAlgorithm();
+                break;
+            case NSGAII:
+                planner = new NSGAIIPlanningAlgorithm();
                 break;
             default:
                 planner = null;

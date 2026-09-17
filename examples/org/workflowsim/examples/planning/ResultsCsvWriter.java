@@ -86,6 +86,31 @@ public class ResultsCsvWriter {
         pw.flush();
     }
 
+    /**
+     * Opens filePath for appending (writing the header only if the file
+     * is new/empty), so several separate JVM invocations -- e.g. one per
+     * workflow batch -- can accumulate rows into a single results file.
+     */
+    public static PrintWriter openAppend(String filePath) {
+        try {
+            File f = new File(filePath);
+            File parent = f.getParentFile();
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs();
+            }
+            boolean needsHeader = !f.exists() || f.length() == 0;
+            PrintWriter pw = new PrintWriter(new FileWriter(f, true), true); // append, autoFlush
+            if (needsHeader) {
+                pw.println(HEADER);
+            }
+            return pw;
+        } catch (IOException e) {
+            Log.printLine("WARNING: could not open results file at " + filePath
+                + " (" + e.getMessage() + "). Continuing without CSV output.");
+            return null;
+        }
+    }
+
     public static void close(PrintWriter pw) {
         if (pw != null) {
             pw.close();

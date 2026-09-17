@@ -44,6 +44,7 @@ import org.workflowsim.WorkflowEngine;
 import org.workflowsim.WorkflowPlanner;
 import org.workflowsim.planning.LIWSAPlanningAlgorithm;
 import org.workflowsim.planning.MLEAOPlanningAlgorithm;
+import org.workflowsim.planning.NSGAIIPlanningAlgorithm;
 import org.workflowsim.utils.ClusteringParameters;
 import org.workflowsim.utils.OverheadParameters;
 import org.workflowsim.utils.Parameters;
@@ -193,20 +194,57 @@ public class LIWSABenchmarkExample {
         // how each algorithm performs from a cold, fully random start.
         boolean useWarmStartSeeding = true;
 
-        String csvOutputPath = "results/benchmark_results.csv";
+        String csvOutputPath = "results/benchmark_results_nsga2.csv";
 
         // ==============================================================
         // END CONFIGURATION
         // ==============================================================
 
+        // Optional CLI overrides, added to let a full sweep be run in
+        // several separate JVM invocations (one per workflow or small
+        // group of workflows) without recompiling between them:
+        //   args[0] - comma-separated workflow base names to restrict
+        //             this run to (e.g. "Montage_25,Montage_50"), or
+        //             omitted/blank to run the full standard+large set
+        //             configured above.
+        //   args[1] - output CSV path override.
+        // When args[0] is given, the CSV is opened in APPEND mode (no
+        // header rewritten) so multiple batch invocations accumulate
+        // into one file; each per-workflow hypervolume reference point
+        // is computed from only that workflow's own algorithms/seeds
+        // (see the shared-reference-point block below), so splitting
+        // the run by workflow changes nothing about any computed value.
+        java.util.Set<String> workflowFilter = null;
+        if (args.length > 0 && !args[0].trim().isEmpty()) {
+            workflowFilter = new java.util.HashSet<>();
+            for (String name : args[0].split(",")) {
+                workflowFilter.add(name.trim());
+            }
+        }
+        if (args.length > 1 && !args[1].trim().isEmpty()) {
+            csvOutputPath = args[1].trim();
+        }
+
         long benchmarkStart = System.currentTimeMillis();
-        PrintWriter csv = ResultsCsvWriter.open(csvOutputPath);
+        PrintWriter csv = (workflowFilter != null)
+            ? ResultsCsvWriter.openAppend(csvOutputPath)
+            : ResultsCsvWriter.open(csvOutputPath);
 
         List<String> daxFiles = new ArrayList<>();
         for (String f : standardDaxFiles) { daxFiles.add(f); }
         if (includeLargeWorkflows) {
             for (String f : largeDaxFiles) { daxFiles.add(f); }
         }
+        if (workflowFilter != null) {
+            List<String> filtered = new ArrayList<>();
+            for (String f : daxFiles) {
+                String name = new File(f).getName().replace(".xml", "");
+                if (workflowFilter.contains(name)) { filtered.add(f); }
+            }
+            daxFiles = filtered;
+        }
+
+        boolean ablationMode = args.length > 2 && "ablation".equals(args[2].trim());
 
         DecimalFormat df2 = new DecimalFormat("#####0.00");
         DecimalFormat df1 = new DecimalFormat("#####0.0");
@@ -247,7 +285,25 @@ public class LIWSABenchmarkExample {
             List<RunResult> mleaoRuns = new ArrayList<>();
             List<RunResult> liwsaRuns = new ArrayList<>();
             List<RunResult> liwsaMlRuns = new ArrayList<>();
+            List<RunResult> nsga2Runs = new ArrayList<>();
+            List<RunResult> liwsaNoDensityRuns = new ArrayList<>();
 
+            if (ablationMode) {
+                for (long seed : seeds) {
+                    LIWSAPlanningAlgorithm.CONFIG_DENSITY_ABLATION = false;
+                    RunResult l = runPlanning(daxPath, Parameters.PlanningAlgorithm.LIWSA,
+                        Parameters.SchedulingAlgorithm.STATIC, "LIWSA", seed,
+                        populationSize, generationCount, warmStartSeeds);
+                    if (l != null) { liwsaRuns.add(l); }
+
+                    LIWSAPlanningAlgorithm.CONFIG_DENSITY_ABLATION = true;
+                    RunResult nd = runPlanning(daxPath, Parameters.PlanningAlgorithm.LIWSA,
+                        Parameters.SchedulingAlgorithm.STATIC, "LIWSA-NoDensity", seed,
+                        populationSize, generationCount, warmStartSeeds);
+                    LIWSAPlanningAlgorithm.CONFIG_DENSITY_ABLATION = false;
+                    if (nd != null) { liwsaNoDensityRuns.add(nd); }
+                }
+            } else {
             for (long seed : seeds) {
                 RunResult m = runPlanning(daxPath, Parameters.PlanningAlgorithm.MLEAO,
                     Parameters.SchedulingAlgorithm.STATIC, "MLEAO", seed,
@@ -263,22 +319,34 @@ public class LIWSABenchmarkExample {
                     Parameters.SchedulingAlgorithm.STATIC, "LIWSA-ML", seed,
                     populationSize, generationCount, warmStartSeeds);
                 if (lm != null) { liwsaMlRuns.add(lm); }
+
+                // Canonical multi-objective baseline: standard NSGA-II
+                // (Deb et al. 2002), same encoding/decoder/population/
+                // generation budget/warm-start seeds as MLEAO/LIWSA above.
+                RunResult ns = runPlanning(daxPath, Parameters.PlanningAlgorithm.NSGAII,
+                    Parameters.SchedulingAlgorithm.STATIC, "NSGA-II", seed,
+                    populationSize, generationCount, warmStartSeeds);
+                if (ns != null) { nsga2Runs.add(ns); }
+            }
             }
 
             // ---- FIX 2: shared hypervolume reference point, computed
             //      across every algorithm and every seed for THIS
             //      workflow, then applied uniformly to all of them ----
+            List<RunResult> resultsThisWorkflow = ablationMode
+                ? allOf(heft, minmin, liwsaRuns, liwsaNoDensityRuns)
+                : allOf(heft, minmin, mleaoRuns, liwsaRuns, liwsaMlRuns, nsga2Runs);
             List<List<double[]>> allFronts = new ArrayList<>();
-            for (RunResult r : allOf(heft, minmin, mleaoRuns, liwsaRuns, liwsaMlRuns)) {
+            for (RunResult r : resultsThisWorkflow) {
                 allFronts.add(r.frontPoints);
             }
             double[] ref = ParetoMetrics.sharedReferencePoint(allFronts);
-            for (RunResult r : allOf(heft, minmin, mleaoRuns, liwsaRuns, liwsaMlRuns)) {
+            for (RunResult r : resultsThisWorkflow) {
                 r.hypervolume = ParetoMetrics.hypervolume2D(r.frontPoints, ref[0], ref[1]);
             }
 
             // ---- write every result to CSV now that hypervolume is final ----
-            for (RunResult r : allOf(heft, minmin, mleaoRuns, liwsaRuns, liwsaMlRuns)) {
+            for (RunResult r : resultsThisWorkflow) {
                 ResultsCsvWriter.writeRow(csv, workflowName, r.name, r.seed,
                     r.makespan, r.cost, r.frontPoints.size(), r.hypervolume,
                     r.avgUtilization, r.fairnessIndex, r.speedup,
@@ -295,8 +363,10 @@ public class LIWSABenchmarkExample {
             printSingle(df2, df1, df3, heft);
             printSingle(df2, df1, df3, minmin);
             printAggregate(df2, df1, df3, "MLEAO", mleaoRuns);
+            printAggregate(df2, df1, df3, "NSGA-II", nsga2Runs);
             printAggregate(df2, df1, df3, "LIWSA", liwsaRuns);
             printAggregate(df2, df1, df3, "LIWSA-ML", liwsaMlRuns);
+            printAggregate(df2, df1, df3, "LIWSA-NoDensity", liwsaNoDensityRuns);
 
             if (heft != null && !liwsaRuns.isEmpty() && !mleaoRuns.isEmpty() && !liwsaMlRuns.isEmpty()) {
                 double liwsaMk = mean(liwsaRuns, r -> r.makespan);
@@ -446,6 +516,10 @@ public class LIWSABenchmarkExample {
             MLEAOPlanningAlgorithm.CONFIG_GENERATION_COUNT = generationCount;
             MLEAOPlanningAlgorithm.CONFIG_RANDOM_SEED = seed;
             MLEAOPlanningAlgorithm.CONFIG_SEED_ASSIGNMENTS = warmStartSeeds;
+            NSGAIIPlanningAlgorithm.CONFIG_POPULATION_SIZE = populationSize;
+            NSGAIIPlanningAlgorithm.CONFIG_GENERATION_COUNT = generationCount;
+            NSGAIIPlanningAlgorithm.CONFIG_RANDOM_SEED = seed;
+            NSGAIIPlanningAlgorithm.CONFIG_SEED_ASSIGNMENTS = warmStartSeeds;
 
             int totalVMs = 0;
             for (double[] t : VM_TYPES) { totalVMs += (int) t[5]; }
@@ -500,6 +574,10 @@ public class LIWSABenchmarkExample {
                     && MLEAOPlanningAlgorithm.lastRun != null) {
                 frontPoints = MLEAOPlanningAlgorithm.lastRun.paretoFrontPoints;
                 searchWall = MLEAOPlanningAlgorithm.lastRun.searchWallClockMillis;
+            } else if (planningAlg == Parameters.PlanningAlgorithm.NSGAII
+                    && NSGAIIPlanningAlgorithm.lastRun != null) {
+                frontPoints = NSGAIIPlanningAlgorithm.lastRun.paretoFrontPoints;
+                searchWall = NSGAIIPlanningAlgorithm.lastRun.searchWallClockMillis;
             }
             r.searchWallClockMillis = searchWall;
             if (frontPoints != null) {

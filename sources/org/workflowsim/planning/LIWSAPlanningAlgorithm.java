@@ -91,6 +91,15 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
     public static int CONFIG_POPULATION_SIZE = 30;
     public static int CONFIG_GENERATION_COUNT = 100;
     public static Long CONFIG_RANDOM_SEED = null;
+    /**
+     * Ablation switch: when true, the phase-mixing probability's density
+     * term uses a fixed constant (0.5, the midpoint of the unit interval)
+     * instead of each individual's measured local crowding, isolating the
+     * causal contribution of density adaptation with every other
+     * mechanism (kernel, annealing schedule, solitary/social operators,
+     * elitism, seeding) held identical. Defaults to false (normal LIWSA).
+     */
+    public static boolean CONFIG_DENSITY_ABLATION = false;
 
     /**
      * Snapshot of the most recently completed run, published at the end of
@@ -241,7 +250,7 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
                 if (i == bestIndex) {
                     continue;
                 }
-                double density = localDensity(i, tau);
+                double density = CONFIG_DENSITY_ABLATION ? 0.5 : localDensity(i, tau);
                 double pSocial = (1 - lambdaMix) * ((double) gen / Math.max(generationCount, 1))
                         + lambdaMix * density;
 
