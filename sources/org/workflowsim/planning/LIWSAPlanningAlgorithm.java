@@ -91,6 +91,7 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
     public static int CONFIG_POPULATION_SIZE = 30;
     public static int CONFIG_GENERATION_COUNT = 100;
     public static Long CONFIG_RANDOM_SEED = null;
+    public static double CONFIG_LAMBDA_MIX = 0.5;
     /**
      * Ablation switch: when true, the phase-mixing probability's density
      * term uses a fixed constant (0.5, the midpoint of the unit interval)
@@ -179,6 +180,7 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
         this.populationSize = CONFIG_POPULATION_SIZE;
         this.generationCount = CONFIG_GENERATION_COUNT;
         this.randomSeed = CONFIG_RANDOM_SEED;
+        this.lambdaMix = CONFIG_LAMBDA_MIX;
     }
 
     public void setPopulationSize(int populationSize) {

@@ -98,6 +98,7 @@ public class LIWSAMLPlanningAlgorithm extends LIWSAPlanningAlgorithm {
     public static int CONFIG_NUM_TRAINING_SAMPLES = 400;
     public static int CONFIG_NUM_PREDICTOR_SEEDS = 4;
     public static double CONFIG_PRED_TEMPERATURE = 0.5;
+    public static boolean CONFIG_NAIVE_FEATURES = false;
 
     // ---- learned model coefficients ----
     private double[] coefMakespan = null;

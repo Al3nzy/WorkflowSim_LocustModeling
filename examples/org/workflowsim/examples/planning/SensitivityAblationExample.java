@@ -2,6 +2,13 @@
  * Copyright 2025-2026 SDU University, Kazakhstan
  * @author Dr. Mohammed Alaa Ala'anzy
  *
+ * 
+ * To run all of experiments, use the following command:
+ * cd "C:\Users\User\git\WorkflowSim_LocustModeling"
+* java -cp "bin;lib/*" org.workflowsim.examples.planning.SensitivityAblationExample lambda
+* java -cp "bin;lib/*" org.workflowsim.examples.planning.SensitivityAblationExample theta
+* java -cp "bin;lib/*" org.workflowsim.examples.planning.SensitivityAblationExample naive
+ * 
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
  * the License at
@@ -26,22 +33,21 @@ import org.workflowsim.planning.LIWSAPlanningAlgorithm;
 import org.workflowsim.utils.Parameters;
 
 /**
- * Two experiments requested by reviewers, both addressed here since they
+ * Two experiments 
  * share the same "sweep a config value, rerun, compare hypervolume" shape:
  *
  * MODE "lambda": sweeps LIWSA's phase-mixing weight
  * (LIWSAPlanningAlgorithm.CONFIG_LAMBDA_MIX) across {0.1, 0.3, 0.5, 0.7,
- * 0.9} -- R1's comment that a globally-fixed lambda "may only apply to a
- * specific scenario".
+ * 0.9} -- 
  *
  * MODE "theta": sweeps LIWSA-ML's softmax temperature
  * (LIWSAMLPlanningAlgorithm.CONFIG_PRED_TEMPERATURE) across the same five
- * values -- the other half of R1's comment.
+ * values.
  *
  * MODE "naive": compares LIWSA-ML's real OLS-fitted warm-start predictor
  * against LIWSAMLPlanningAlgorithm.CONFIG_NAIVE_FEATURES=true, which scores
  * (task, VM) pairs with only the raw, un-learned predicted duration and
- * cost -- R3 Q3's request for a controlled test of whether the OLS model
+ * cost -- a controlled test of whether the OLS model
  * adds value beyond simple task-duration/cost features.
  *
  * Both sweeps run on one representative instance per workflow family (the
