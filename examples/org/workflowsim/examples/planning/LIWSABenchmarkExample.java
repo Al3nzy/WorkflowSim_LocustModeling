@@ -95,14 +95,14 @@ import org.workflowsim.utils.ReplicaCatalog;
  */
 public class LIWSABenchmarkExample {
 
-    private static final double[][] VM_TYPES = {
+    static final double[][] VM_TYPES = {
         { 250.0, 160.0, 0.15, 512, 10000, 4},  // Micro  x4
         { 500.0, 160.0, 0.30, 512, 10000, 4},  // Small  x4
         {1000.0, 160.0, 0.60, 512, 10000, 4},  // Medium x4
         {2000.0, 160.0, 0.90, 512, 10000, 4},  // Large  x4
     };
 
-    private static class RunResult {
+    static class RunResult {
         String name;
         long seed;
         double makespan;
@@ -409,7 +409,7 @@ public class LIWSABenchmarkExample {
     }
 
     @SafeVarargs
-    private static List<RunResult> allOf(RunResult a, RunResult b, List<RunResult>... lists) {
+    static List<RunResult> allOf(RunResult a, RunResult b, List<RunResult>... lists) {
         List<RunResult> out = new ArrayList<>();
         if (a != null) { out.add(a); }
         if (b != null) { out.add(b); }
@@ -499,7 +499,7 @@ public class LIWSABenchmarkExample {
         return map;
     }
 
-    private static RunResult runPlanning(
+    static RunResult runPlanning(
             String daxPath,
             Parameters.PlanningAlgorithm planningAlg,
             Parameters.SchedulingAlgorithm schedulingAlg,
@@ -596,7 +596,7 @@ public class LIWSABenchmarkExample {
         }
     }
 
-    private static List<CondorVM> createVMs(int userId) {
+    static List<CondorVM> createVMs(int userId) {
         LinkedList<CondorVM> list = new LinkedList<>();
         int vmId = 0;
         for (double[] type : VM_TYPES) {
@@ -611,7 +611,7 @@ public class LIWSABenchmarkExample {
         return list;
     }
 
-    private static WorkflowDatacenter createDatacenter(String name) {
+    static WorkflowDatacenter createDatacenter(String name) {
         int totalVMs = 0;
         for (double[] t : VM_TYPES) { totalVMs += (int) t[5]; }
         int numHosts = Math.max(1, (totalVMs + 3) / 4);
