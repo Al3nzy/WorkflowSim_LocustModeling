@@ -1,0 +1,5 @@
+algorithm,runs,planned_makespan,sim_makespan,makespan_rel_err_pct,planned_cost,sim_cost,cost_rel_err_pct
+HEFT-schedule,1,35.4220,35.5200,0.2770,109.1820,110.2680,0.9950
+MinMin-schedule,1,41.9297,41.6190,-0.7410,109.4265,110.3645,0.8570
+LIWSA-chosen,3,35.2757,35.6860,1.1680,106.0470,107.0394,0.9360
+NSGA-II-chosen,3,35.2757,45.3760,28.3590,104.4915,105.4247,0.8930
