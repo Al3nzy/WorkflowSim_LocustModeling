@@ -10,9 +10,17 @@
 </p>
 
 <p align="center">
-  <b>Density-Adaptive Locust Swarm Optimisation with Self-Supervised OLS Warm-Start<br>for Pareto-Optimal Cloud Workflow Scheduling</b><br>
+  <b>Density-Adaptive Locust Swarm Optimisation with Simulation-Trained OLS Warm-Start<br>for Pareto-Based Cloud Workflow Scheduling</b><br>
   <i>Dr. Mohammed Alaa Ala'anzy — SDU University, Kazakhstan</i>
 </p>
+
+> **Version note (v2).** This release makes the search roughly 3x faster on 100-task and
+> up to roughly 10x faster on 1000-task workflows **without changing any result**
+> (see [`CHANGES_v2.md`](CHANGES_v2.md)), makes HEFT deterministic, and adds tools that
+> measure how closely the planning-level decoder matches WorkflowSim
+> (`DecoderFidelityCheck`, `SimulatedFrontEvaluation`) and that compare NSGA-II and
+> LIWSA-ML at matched wall-clock time (`EqualTimeBenchmark`). Search-time figures
+> quoted below were measured with the earlier, slower implementation.
 
 ---
 
@@ -20,7 +28,7 @@
 
 When individual locusts sense neighbours around them, they shift from solitary foraging to collective swarming — not because a clock told them to, but because of local density. **LIWSA** brings this exact mechanism into cloud workflow scheduling: each candidate schedule measures its own neighbourhood crowding at every generation and decides its own phase probability. No weight. No global clock. No scalar aggregation of makespan vs cost.
 
-The result: a **true Pareto front** of scheduling options — not one solution, but a menu of makespan-vs-cost trade-offs — produced entirely inside WorkflowSim with zero external dependencies.
+The result: a **non-dominated front** approximating the Pareto front of scheduling options — not one solution, but a menu of makespan-vs-cost trade-offs — produced entirely inside WorkflowSim with zero external dependencies.
 
 ---
 
@@ -46,11 +54,21 @@ WorkflowSim_LocustModeling/
 │   ├── ParetoMetrics.java                      ← 2D hypervolume calculator
 │   ├── ResultsCsvWriter.java                   ← Shared CSV output writer
 │   └── RunMetricsCalculator.java               ← Shared metrics (all algorithms)
-└── results/
-    ├── generate_figures.py                     ← Figure generator for any results CSV
-    ├── run_parallel.sh                         ← Safe process-level parallel batch runner
-    └── *.csv                                   ← Benchmark, ablation, and sweep results
+├── generate_figures.py                         ← Figures + summary for any results CSV (Python)
+├── summarize_results.py                        ← Summary table of all algorithms (Python)
+├── analyze_online_learning.py                  ← Online-learning vs NSGA-II comparison (Python)
+├── run_parallel.sh                             ← Safe process-level parallel batch runner
+└── Output&Results/                             ← EVERYTHING the programs write goes here
+    ├── *.csv                                   ← Benchmark, ablation, sweep and tool results
+    ├── *_summary.txt / *_summary.csv           ← All-algorithm summary written at the end of each run
+    ├── figures/                                ← PDF figures made by generate_figures.py
+    └── logs/                                   ← Per-batch logs from run_parallel.sh
 ```
+
+> **Windows / shells:** the output folder is called `Output&Results`. The `&` is a command separator in
+> `cmd.exe` and the call operator in PowerShell, so **always put the path in quotes** (`"Output&Results/..."`).
+> The folder name is defined in one place in the Java code (`ResultsPaths.OUTPUT_DIR`) and at the top of each
+> Python script (`OUTPUT_DIR`), so it can be changed easily.
 
 ---
 
@@ -98,10 +116,10 @@ A standard, faithful implementation (Deb et al., 2002): fast non-dominated sorti
 
 LIWSA-ML beats HEFT, Min-Min, and MLEAO clearly and consistently (mean hypervolume gain +9.1% over MLEAO). Against a standard NSGA-II baseline at matched search budget, encoding, decoder, and warm-start seeds, the picture is closer: NSGA-II wins mean hypervolume on 14/20 instances to LIWSA-ML's 5 (margins narrow, ~1.4% on average, not significant at n=5), while running 1.4×–13.5× faster depending on workflow size — traced to the O(P²n) cost of LIWSA's density-driven solitary-phase voting vs. NSGA-II's O(P²+Pn) operators.
 
-On **data-intensive workflows** (Epigenomics, Inspiral at ~1000 tasks), LIWSA-ML simultaneously reduces makespan and cost versus HEFT (e.g. Epigenomics_997: −78.5% makespan, −10.0% cost) — true Pareto dominance, not a trade-off, and a pattern all four population-based algorithms (MLEAO, LIWSA, NSGA-II, LIWSA-ML) share to some degree since it stems from a structural HEFT weakness on large file transfers, not from any one algorithm's search strategy specifically.
+On **data-intensive workflows** (Epigenomics, Inspiral at ~1000 tasks), LIWSA-ML simultaneously reduces makespan and cost versus HEFT (e.g. Epigenomics_997: −78.5% makespan, −10.0% cost) — the schedule Pareto-dominates HEFT's on both objectives, not a trade-off, and a pattern all four population-based algorithms (MLEAO, LIWSA, NSGA-II, LIWSA-ML) share to some degree since it stems from a structural HEFT weakness on large file transfers, not from any one algorithm's search strategy specifically.
 
 <p align="center">
-  <img src="results/figures/hypervolume.png" alt="Hypervolume by workflow and algorithm" width="800"><br>
+  <img src="Output%26Results/figures/hypervolume.png" alt="Hypervolume by workflow and algorithm" width="800"><br>
   <sub><b>Fig. 1</b> — Mean hypervolume per workflow and algorithm (log-scaled, since values span orders of magnitude from 25-task to 1000-task instances). All four population-based algorithms (MLEAO, LIWSA, NSGA-II, LIWSA-ML) clear HEFT and Min-Min by a wide margin at every scale.</sub>
 </p>
 
@@ -117,13 +135,13 @@ On **data-intensive workflows** (Epigenomics, Inspiral at ~1000 tasks), LIWSA-ML
 Read together with the NSGA-II comparison: LIWSA-ML's aggregate advantage over HEFT/Min-Min/MLEAO is real and reproducible, but in controlled, like-for-like tests neither of the two specific refinements (adaptive density weighting, learned feature combination) is individually responsible for it. What both retain is architectural — a self-calibrating mechanism needing no manual per-workflow retuning — not a demonstrated performance edge over the simplest reasonable alternative.
 
 <p align="center">
-  <img src="results/figures/density_ablation.png" alt="Density ablation" width="46%">
-  <img src="results/figures/ols_vs_naive.png" alt="OLS vs naive features" width="46%"><br>
+  <img src="Output%26Results/figures/density_ablation.png" alt="Density ablation" width="46%">
+  <img src="Output%26Results/figures/ols_vs_naive.png" alt="OLS vs naive features" width="46%"><br>
   <sub><b>Fig. 2</b> — Left: LIWSA vs. LIWSA-NoDensity (density fixed at 0.5). Right: LIWSA-ML's learned OLS predictor vs. a naive duration/cost-only heuristic. Neither ablation shows a consistent edge for the more sophisticated mechanism.</sub>
 </p>
 
 <p align="center">
-  <img src="results/figures/lambda_sensitivity.png" alt="Lambda sensitivity sweep" width="600"><br>
+  <img src="Output%26Results/figures/lambda_sensitivity.png" alt="Lambda sensitivity sweep" width="600"><br>
   <sub><b>Fig. 3</b> — Phase-mixing weight λ swept from 0.1 to 0.9 on one representative instance per workflow family. Each curve is normalised to that workflow's own mean hypervolume: all five stay within roughly ±2% of their mean, showing the algorithm is not fragile to this parameter's exact value.</sub>
 </p>
 
@@ -135,7 +153,7 @@ All algorithm drivers share the same supporting classes, so results are directly
 
 **`RunMetricsCalculator`** — computes makespan, execution cost (using `CostModel.VM` per-second rates), average VM utilisation, Jain's fairness index, and scheduling speedup from the simulator's actual job results. One implementation, used by every driver.
 
-**`ParetoMetrics`** — 2D hypervolume calculator with a shared cross-algorithm reference point. The reference point is computed once per workflow, across every algorithm being compared for that workflow, and reused — ensuring hypervolume comparisons are meaningful and not inflated by a single algorithm's own bad points. (This also means hypervolume values are only comparable *within* one CSV/comparator set, not across different CSVs — see the note in `results/README` below.)
+**`ParetoMetrics`** — 2D hypervolume calculator with a shared cross-algorithm reference point. The reference point is computed once per workflow, across every algorithm being compared for that workflow, and reused — ensuring hypervolume comparisons are meaningful and not inflated by a single algorithm's own bad points. (This also means hypervolume values are only comparable *within* one CSV/comparator set, not across different CSVs — see the note below.)
 
 **`ResultsCsvWriter`** — single CSV schema, flushed to disk after every completed run (not buffered to the end), so a long benchmark interrupted partway through still leaves every completed result safely on disk. Also provides `openAppend()` for batched/parallel runs that accumulate into one file.
 
@@ -174,28 +192,33 @@ javac -nowarn -cp "lib/*" -d bin @sources.txt
 **3. Run the full benchmark** (20 workflows, 6 algorithms, 5 seeds, CSV output):
 ```bash
 java -cp "bin:lib/*" org.workflowsim.examples.planning.LIWSABenchmarkExample
-# Results written to: results/benchmark_results.csv (~17 min single-threaded)
+# Results written to: Output&Results/benchmark_results_nsga2.csv (~17 min single-threaded)
 ```
+When the run finishes, the program prints a **summary of all algorithms** (mean makespan, cost, front size,
+hypervolume, utilisation, fairness, speedup and search time per algorithm; a hypervolume score where 100 = best
+algorithm on each workflow, wins and average rank; hypervolume per workflow; LIWSA-ML relative to every other
+algorithm) and saves it as `Output&Results/benchmark_results_nsga2_summary.txt` and `..._summary.csv`.
+It also prints where the files are and the Python commands below.
 
 **3b. Or run it in batches** (same output, useful for splitting across sessions or machines — each batch computes its own workflows' hypervolume reference point independently, so results are identical to a single full run):
 ```bash
 java -cp "bin:lib/*" org.workflowsim.examples.planning.LIWSABenchmarkExample \
-  "Montage_25,Montage_50,Montage_100" "results/my_run.csv"
+  "Montage_25,Montage_50,Montage_100" "Output&Results/my_run.csv"
 ```
 
-**3c. Or run several batches in parallel** (process-level parallelism — see `results/run_parallel.sh` and the note below on why this is process-level, not thread-level):
+**3c. Or run several batches in parallel** (process-level parallelism — see `run_parallel.sh` and the note below on why this is process-level, not thread-level):
 ```bash
-./results/run_parallel.sh full       # full benchmark, 5 batches
-./results/run_parallel.sh ablation   # density ablation, 5 batches
-./results/run_parallel.sh lambda     # lambda sensitivity sweep
-./results/run_parallel.sh theta      # theta sensitivity sweep
-./results/run_parallel.sh naive      # OLS-vs-naive-features ablation
+./run_parallel.sh full       # full benchmark, 5 batches
+./run_parallel.sh ablation   # density ablation, 5 batches
+./run_parallel.sh lambda     # lambda sensitivity sweep
+./run_parallel.sh theta      # theta sensitivity sweep
+./run_parallel.sh naive      # OLS-vs-naive-features ablation
 ```
 
 **4. Run the density ablation** (`LIWSA` vs `LIWSA-NoDensity`, all 20 instances):
 ```bash
 java -cp "bin:lib/*" org.workflowsim.examples.planning.LIWSABenchmarkExample \
-  "" "results/ablation_results.csv" "ablation"
+  "" "Output&Results/ablation_results.csv" "ablation"
 ```
 
 **5. Run a sensitivity sweep or the naive-features ablation** (5 representative workflows, one per family, by default):
@@ -205,13 +228,18 @@ java -cp "bin:lib/*" org.workflowsim.examples.planning.SensitivityAblationExampl
 java -cp "bin:lib/*" org.workflowsim.examples.planning.SensitivityAblationExample naive
 ```
 
-**6. Generate figures from any results CSV:**
+**6. See the summary and the figures** (Python 3 with `pip install pandas matplotlib numpy`; run from the repository root, keep the quotes):
 ```bash
-python3 results/generate_figures.py results/benchmark_results.csv
-python3 results/generate_figures.py results/lambda_results.csv --sweep "LIWSA_L"
-python3 results/generate_figures.py results/naive_results.csv --pair "LIWSA-ML,LIWSA-ML-Naive"
+python generate_figures.py                                          # default file: benchmark_results_nsga2.csv
+python generate_figures.py "Output&Results/benchmark_results_nsga2.csv"
+python generate_figures.py --all                                    # every known results file in Output&Results
+python generate_figures.py lambda_results.csv --sweep "LIWSA_L"
+python generate_figures.py naive_results.csv --pair "LIWSA-ML,LIWSA-ML-Naive"
+python summarize_results.py "Output&Results/benchmark_results_nsga2.csv"   # summary table only
 ```
-Figures are saved as PDFs under `results/figures/`. Hypervolume is plotted on a **log-scaled** y-axis by default — do not change this back to linear without splitting small- and large-scale instances into separate panels, or small-scale bars will visually disappear next to 1000-task instances (this happened once already; see the paper's Fig. 2 for the fix).
+`generate_figures.py` prints the same all-algorithm summary and saves the figures as PDFs in `Output&Results/figures/`
+(hypervolume, makespan and cost per workflow and algorithm; sweeps; ablation pairs). Use `python` or `python3`,
+whichever your system has. Hypervolume is plotted on a **log-scaled** y-axis by default — do not change this back to linear without splitting small- and large-scale instances into separate panels, or small-scale bars will visually disappear next to 1000-task instances (this happened once already; see the paper's Fig. 2 for the fix).
 
 **7. Run the HEFT baseline standalone:**
 ```bash
@@ -268,11 +296,11 @@ The sensitivity sweep and OLS-vs-naive ablation (above) use the 100-task scale p
 
 ## 📄 Paper
 
-> **Density-Adaptive Locust Swarm Optimisation with Self-Supervised OLS Warm-Start for Pareto-Optimal Cloud Workflow Scheduling**  
+> **Density-Adaptive Locust Swarm Optimisation with Simulation-Trained OLS Warm-Start for Pareto-Based Cloud Workflow Scheduling**  
 > Dr. Mohammed Alaa Ala'anzy  
 > *IEEE Transactions on Cloud Computing* (submitted)
 
-Full numerical results for all 20 workflow instances, plus the ablation and sensitivity sweep CSVs, are available in the [`results/`](https://github.com/Al3nzy/WorkflowSim_LocustModeling/tree/master/results) directory.
+Full numerical results for all 20 workflow instances, plus the ablation and sensitivity sweep CSVs, are available in the [`Output&Results/`](https://github.com/Al3nzy/WorkflowSim_LocustModeling/tree/master/Output%26Results) directory.
 
 ---
 

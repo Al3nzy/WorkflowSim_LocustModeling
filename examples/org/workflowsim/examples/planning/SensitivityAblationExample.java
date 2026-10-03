@@ -87,7 +87,7 @@ public class SensitivityAblationExample {
             for (String f : DEFAULT_DAX) { daxFiles.add(f); }
         }
         String csvOutputPath = args.length > 2 && !args[2].trim().isEmpty()
-            ? args[2].trim() : ("results/" + mode + "_results.csv");
+            ? args[2].trim() : ResultsPaths.resolve(mode + "_results.csv");
 
         long[] seeds = {1L, 2L, 3L, 4L, 5L};
         int populationSize = 30;
@@ -212,5 +212,9 @@ public class SensitivityAblationExample {
             mode, elapsed / 1000.0, elapsed / 60000.0);
         System.out.println("Results written to: " + csvOutputPath);
         System.out.println("=".repeat(78));
+
+        System.out.println();
+        ResultsSummary.print(csvOutputPath, null);
+        ResultsPaths.printHints(csvOutputPath);
     }
 }

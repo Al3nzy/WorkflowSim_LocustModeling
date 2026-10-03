@@ -190,7 +190,7 @@ public class MLEAOPlanningAlgorithmExample extends WorkflowSimBasicExample1 {
             long randomSeed = 7L;
 
             // Path for the CSV results file. One row is written for this run.
-            String csvOutputPath = "results/MLEAO_results.csv";
+            String csvOutputPath = ResultsPaths.resolve("MLEAO_results.csv");
 
             // ==============================================================
             // END CONFIGURATION

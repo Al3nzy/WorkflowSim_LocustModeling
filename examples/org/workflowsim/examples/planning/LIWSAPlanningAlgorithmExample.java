@@ -190,7 +190,7 @@ public class LIWSAPlanningAlgorithmExample extends WorkflowSimBasicExample1 {
             long randomSeed = 7L;
 
             // Path for the CSV results file. One row is written for this run.
-            String csvOutputPath = "results/LIWSA_results.csv";
+            String csvOutputPath = ResultsPaths.resolve("LIWSA_results.csv");
 
             // ==============================================================
             // END CONFIGURATION

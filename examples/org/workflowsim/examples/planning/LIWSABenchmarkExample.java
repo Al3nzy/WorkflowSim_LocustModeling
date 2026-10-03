@@ -79,7 +79,7 @@ import org.workflowsim.utils.ReplicaCatalog;
  *     of the planning algorithm left no reachable injection point for it
  *     until the CONFIG_SEED_ASSIGNMENTS mechanism was added.
  *
- * OUTPUT: a CSV file (default results/benchmark_results.csv) with one row
+ * OUTPUT: a CSV file (default Output&Results/benchmark_results_nsga2.csv) with one row
  * per (workflow, algorithm, seed), written and flushed immediately after
  * each run completes -- not buffered to the end -- so an interrupted run
  * still leaves every completed result safely on disk. Uses the shared
@@ -192,9 +192,16 @@ public class LIWSABenchmarkExample {
         // HEFT's and Min-Min's actual computed schedules. Recommended on;
         // this is what was validated during prototyping. Set false to see
         // how each algorithm performs from a cold, fully random start.
-        boolean useWarmStartSeeding = true;
+        // Cold-start variant for the initialisation ablation: run with -Dliwsa.coldStart=true
+        boolean useWarmStartSeeding = !Boolean.getBoolean("liwsa.coldStart");
 
-        String csvOutputPath = "results/benchmark_results_nsga2.csv";
+        // Optional, off by default (so the published numbers are reproduced exactly):
+        // -Dliwsa.planningLevelBaselines=true scores HEFT and Min-Min for the
+        // hypervolume with the SAME planning-level decoder that evaluates every
+        // population member, instead of with their simulator-measured point.
+        boolean planningLevelBaselines = Boolean.getBoolean("liwsa.planningLevelBaselines");
+
+        String csvOutputPath = ResultsPaths.resolve("benchmark_results_nsga2.csv");
 
         // ==============================================================
         // END CONFIGURATION
@@ -330,6 +337,19 @@ public class LIWSABenchmarkExample {
             }
             }
 
+            if (planningLevelBaselines && useWarmStartSeeding && !ablationMode
+                    && LIWSAPlanningAlgorithm.lastRun != null
+                    && LIWSAPlanningAlgorithm.lastRun.seedPlanningPoints != null
+                    && warmStartSeeds.size() == 2
+                    && LIWSAPlanningAlgorithm.lastRun.seedPlanningPoints.size() >= 2) {
+                List<double[]> sp = LIWSAPlanningAlgorithm.lastRun.seedPlanningPoints;
+                heft.frontPoints = new ArrayList<>();
+                heft.frontPoints.add(sp.get(0).clone());
+                minmin.frontPoints = new ArrayList<>();
+                minmin.frontPoints.add(sp.get(1).clone());
+                System.out.println("  [planning-level baselines] HEFT and Min-Min hypervolume points taken from the shared decoder.");
+            }
+
             // ---- FIX 2: shared hypervolume reference point, computed
             //      across every algorithm and every seed for THIS
             //      workflow, then applied uniformly to all of them ----
@@ -406,6 +426,15 @@ public class LIWSABenchmarkExample {
             totalWall / 1000.0, totalWall / 60000.0);
         System.out.println("Results written to: " + csvOutputPath);
         System.out.println("=".repeat(78));
+
+        // ---- final summary of every algorithm, saved next to the CSV ----
+        java.util.Set<String> ranNames = new java.util.HashSet<>();
+        for (String f : daxFiles) {
+            ranNames.add(new File(f).getName().replace(".xml", ""));
+        }
+        System.out.println();
+        ResultsSummary.print(csvOutputPath, ranNames);
+        ResultsPaths.printHints(csvOutputPath);
     }
 
     @SafeVarargs

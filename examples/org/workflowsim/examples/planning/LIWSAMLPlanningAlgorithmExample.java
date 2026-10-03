@@ -216,7 +216,7 @@ public class LIWSAMLPlanningAlgorithmExample extends WorkflowSimBasicExample1 {
             double predTemperature = 0.5;
 
             // Path for the CSV results file. One row is written for this run.
-            String csvOutputPath = "results/LIWSA-ML_results.csv";
+            String csvOutputPath = ResultsPaths.resolve("LIWSA-ML_results.csv");
 
             // ==============================================================
             // END CONFIGURATION
