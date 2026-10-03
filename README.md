@@ -22,6 +22,28 @@
 > LIWSA-ML at matched wall-clock time (`EqualTimeBenchmark`). Search-time figures
 > quoted below were measured with the earlier, slower implementation.
 
+## Quick start: run everything and see who is better
+
+From the repository root (Java 11 or newer; on macOS/Linux replace `;` with `:` in `-cp`):
+
+```bash
+# 1. All three variants (A published, B + Pareto archive, C + archive + online learning) and the comparison table
+java -cp "bin;lib/*" org.workflowsim.examples.planning.RunAllVariants
+#    faster, only the 15 workflows of 24-100 tasks:   ... RunAllVariants SMALL
+
+# 2. Figures and summary for a variant (written to  Output&Results/figures/ )
+python generate_figures.py "Output&Results/variant_A_published.csv"
+python generate_figures.py "Output&Results/variant_C_archive_online.csv"
+
+# 3. Re-score every front with simulator-measured values (the fairest evaluation); last letter = variant A, B or C
+java -cp "bin;lib/*" org.workflowsim.examples.planning.SimulatedFrontEvaluation SMALL 1,2,3,4,5 "Output&Results/simulated_A_small.csv" A
+java -cp "bin;lib/*" org.workflowsim.examples.planning.SimulatedFrontEvaluation SMALL 1,2,3,4,5 "Output&Results/simulated_C_small.csv" C
+```
+`RunAllVariants` needs no command-line options: the variants are switched in code. (They correspond to the options
+`-Dliwsa.outputArchive=true` and `-Dliwsa.onlineLearning=true`, which are Java command-line options typed after `java`;
+they are not stored in any file. Use them only if you start the single-run programs yourself.)
+The comparison table is saved as `Output&Results/variants_comparison.txt`.
+
 ---
 
 > *Desert locusts don't follow a timer. They respond to crowding. So does LIWSA.*

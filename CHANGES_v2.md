@@ -32,6 +32,11 @@ HEFT broke rank ties, and summed per-VM costs, in `HashMap` iteration order keye
 * `ResultsSummary` prints and saves (`<name>_summary.txt`, `<name>_summary.csv`) a summary of all algorithms at the end of `LIWSABenchmarkExample`, `SensitivityAblationExample`, `DecoderFidelityCheck`, `SimulatedFrontEvaluation` and `EqualTimeBenchmark`, and `run_parallel.sh` calls it on the combined CSV. It can also be run on its own: `java -cp "bin:lib/*" org.workflowsim.examples.planning.ResultsSummary "Output&Results/file.csv"`.
 * `generate_figures.py`, `summarize_results.py`, `analyze_online_learning.py` and `run_parallel.sh` are in the repository root. `python generate_figures.py --all` processes every known results file. The old `results/` paths inside them were updated.
 
+## 3c. One-command variants and readable figures
+
+* `RunAllVariants` runs the whole benchmark as A (published), B (+ archive) and C (+ archive + online learning) with no `-D` options and prints/saves a table `variants_comparison.txt` of LIWSA-ML and LIWSA against NSGA-II, MLEAO, HEFT and Min-Min (all / small / large workflows). `SimulatedFrontEvaluation` accepts `ALL`, `SMALL`, `LARGE` and a final variant letter.
+* `generate_figures.py` now draws one panel per workflow family, with the 24-100-task instances and the 997/1000-task instances in separate figures (`*_small`, `*_large`, PDF and PNG), error bars over seeds, and a `*_hypervolume_relative_*` heat map (% of the best algorithm per workflow).
+
 ## 4. New tools (`examples/org/workflowsim/examples/planning/`)
 
 | Tool | Purpose |

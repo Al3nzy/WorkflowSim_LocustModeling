@@ -40,6 +40,32 @@ public final class ResultsPaths {
         return OUTPUT_DIR + "/" + fileName;
     }
 
+    public static final String SMALL_WORKFLOWS =
+        "Montage_25,Montage_50,Montage_100,CyberShake_30,CyberShake_50,CyberShake_100,"
+        + "Sipht_30,Sipht_60,Sipht_100,Epigenomics_24,Epigenomics_46,Epigenomics_100,"
+        + "Inspiral_30,Inspiral_50,Inspiral_100";
+    public static final String LARGE_WORKFLOWS =
+        "Montage_1000,CyberShake_1000,Sipht_1000,Inspiral_1000,Epigenomics_997";
+
+    /** ALL / SMALL / LARGE (any case) -> the workflow lists above; anything else is returned unchanged. */
+    public static String expandWorkflowKeyword(String arg) {
+        String a = arg == null ? "" : arg.trim();
+        if (a.equalsIgnoreCase("SMALL")) { return SMALL_WORKFLOWS; }
+        if (a.equalsIgnoreCase("LARGE")) { return LARGE_WORKFLOWS; }
+        if (a.equalsIgnoreCase("ALL")) { return SMALL_WORKFLOWS + "," + LARGE_WORKFLOWS; }
+        return a;
+    }
+
+    /**
+     * Switches the optional LIWSA features in code, so no -D command-line option is needed.
+     * A = published algorithm; B = + external Pareto archive; C = + archive + online learning.
+     */
+    public static void applyVariant(String variant) {
+        String v = variant == null ? "A" : variant.trim().toUpperCase();
+        org.workflowsim.planning.LIWSAPlanningAlgorithm.CONFIG_OUTPUT_ARCHIVE = v.equals("B") || v.equals("C");
+        org.workflowsim.planning.LIWSAMLPlanningAlgorithm.CONFIG_ONLINE_LEARNING = v.equals("C");
+    }
+
     /** Prints where the files are and how to turn the CSV into figures. */
     public static void printHints(String csvPath) {
         String base = csvPath.endsWith(".csv") ? csvPath.substring(0, csvPath.length() - 4) : csvPath;

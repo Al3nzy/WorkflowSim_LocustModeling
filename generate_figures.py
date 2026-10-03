@@ -38,6 +38,7 @@ Do not switch the hypervolume axis back to linear without splitting small and la
 into separate panels, or the small-scale bars disappear.
 """
 import argparse
+import re
 import os
 import sys
 
@@ -79,53 +80,105 @@ def style_for(name, idx):
     return {'color': FALLBACK_COLORS[idx % len(FALLBACK_COLORS)], 'hatch': ''}
 
 
-def default_mode(df, outdir, basename):
-    """Bar chart of mean hypervolume per workflow per algorithm, log y-axis."""
-    mean_hv = df.groupby(['workflow', 'algorithm'])['hypervolume'].mean().unstack()
-    workflows = sorted(mean_hv.index)
-    algos = list(mean_hv.columns)
+FAMILY_ORDER = ['Montage', 'CyberShake', 'Sipht', 'Epigenomics', 'Inspiral']
+LARGE_FROM = 900          # 997/1000-task instances are plotted separately from the 24-100-task ones
 
-    fig, ax = plt.subplots(figsize=(max(8, 0.5 * len(workflows) * len(algos)), 5))
-    x = np.arange(len(workflows))
+
+def _split_name(wf):
+    """'Montage_25' -> ('Montage', 25); names that do not fit the pattern -> (name, 0)."""
+    m = re.match(r'^(.*?)_(\d+)$', wf)
+    return (m.group(1), int(m.group(2))) if m else (wf, 0)
+
+
+def _groups(workflows):
+    """Returns {'small': [...], 'large': [...]} with workflows ordered by family then size."""
+    def key(wf):
+        fam, n = _split_name(wf)
+        return (FAMILY_ORDER.index(fam) if fam in FAMILY_ORDER else len(FAMILY_ORDER), fam, n)
+    ordered = sorted(workflows, key=key)
+    return {'small': [w for w in ordered if _split_name(w)[1] < LARGE_FROM],
+            'large': [w for w in ordered if _split_name(w)[1] >= LARGE_FROM]}
+
+
+def _save(fig, outdir, name):
+    for ext in ('pdf', 'png'):
+        out = os.path.join(outdir, f'{name}.{ext}')
+        fig.savefig(out, bbox_inches='tight', dpi=150)
+    print(f"Saved {os.path.join(outdir, name)}.pdf / .png")
+    plt.close(fig)
+
+
+def _panel_figure(df, metric, label, workflows, algos, title, outdir, name):
+    """One panel per workflow family; bars grouped by instance size; each panel has its own linear y-axis."""
+    mean = df.groupby(['workflow', 'algorithm'])[metric].mean().unstack()
+    std = df.groupby(['workflow', 'algorithm'])[metric].std().unstack().fillna(0)
+    fams = [f for f in FAMILY_ORDER if any(_split_name(w)[0] == f for w in workflows)]
+    fams += sorted({_split_name(w)[0] for w in workflows} - set(fams))
+    fig, axes = plt.subplots(1, len(fams), figsize=(3.4 * len(fams) + 1.2, 3.8), squeeze=False)
     width = 0.8 / max(len(algos), 1)
-    for i, alg in enumerate(algos):
-        st = style_for(alg, i)
-        vals = [mean_hv.loc[wf, alg] if wf in mean_hv.index and not pd.isna(mean_hv.loc[wf, alg]) else 0
-                for wf in workflows]
-        ax.bar(x + (i - len(algos) / 2) * width, vals, width, label=alg,
-               color=st['color'], hatch=st['hatch'], edgecolor='black', linewidth=0.3)
-    ax.set_yscale('log')
-    ax.set_xticks(x)
-    ax.set_xticklabels(workflows, rotation=45, ha='right', fontsize=8)
-    ax.set_ylabel('Hypervolume (log scale)')
-    ax.set_title(f'Hypervolume by workflow and algorithm -- {basename}')
-    ax.legend(fontsize=8, ncol=min(len(algos), 6))
-    plt.tight_layout()
-    out = os.path.join(outdir, f'{basename}_hypervolume.pdf')
-    plt.savefig(out, bbox_inches='tight')
-    print(f"Saved {out}")
-
-    # Companion: makespan and cost, per-workflow panels (can't log-scale
-    # safely if any algorithm's mean is used as a 0% baseline elsewhere,
-    # so these are plotted as-is per workflow rather than vs a baseline).
-    for metric, label in [('makespan', 'Makespan (s)'), ('cost', 'Cost ($)')]:
-        mean_m = df.groupby(['workflow', 'algorithm'])[metric].mean().unstack()
-        fig, ax = plt.subplots(figsize=(max(8, 0.5 * len(workflows) * len(algos)), 5))
+    for ax, fam in zip(axes[0], fams):
+        wfs = [w for w in workflows if _split_name(w)[0] == fam]
+        x = np.arange(len(wfs))
         for i, alg in enumerate(algos):
             st = style_for(alg, i)
-            vals = [mean_m.loc[wf, alg] if wf in mean_m.index and not pd.isna(mean_m.loc[wf, alg]) else 0
-                    for wf in workflows]
-            ax.bar(x + (i - len(algos) / 2) * width, vals, width, label=alg,
-                   color=st['color'], hatch=st['hatch'], edgecolor='black', linewidth=0.3)
+            vals = [mean.loc[w, alg] if alg in mean.columns and not pd.isna(mean.loc[w, alg]) else 0 for w in wfs]
+            errs = [std.loc[w, alg] if alg in std.columns else 0 for w in wfs]
+            ax.bar(x + (i - (len(algos) - 1) / 2) * width, vals, width, yerr=errs, capsize=1.5,
+                   error_kw={'elinewidth': 0.6}, label=alg, color=st['color'], hatch=st['hatch'],
+                   edgecolor='black', linewidth=0.3)
         ax.set_xticks(x)
-        ax.set_xticklabels(workflows, rotation=45, ha='right', fontsize=8)
-        ax.set_ylabel(label)
-        ax.set_title(f'{label} by workflow and algorithm -- {basename}')
-        ax.legend(fontsize=8, ncol=min(len(algos), 6))
-        plt.tight_layout()
-        out = os.path.join(outdir, f'{basename}_{metric}.pdf')
-        plt.savefig(out, bbox_inches='tight')
-        print(f"Saved {out}")
+        ax.set_xticklabels([str(_split_name(w)[1]) + ' tasks' for w in wfs], fontsize=8)
+        ax.set_title(fam, fontsize=10)
+        ax.ticklabel_format(axis='y', style='sci', scilimits=(-2, 4))
+        ax.tick_params(axis='y', labelsize=8)
+        ax.grid(axis='y', linewidth=0.3, alpha=0.5)
+    axes[0][0].set_ylabel(label)
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc='upper center', ncol=len(algos), fontsize=8, bbox_to_anchor=(0.5, 1.02))
+    fig.suptitle(title, y=1.09, fontsize=11)
+    fig.tight_layout()
+    _save(fig, outdir, name)
+
+
+def _relative_heatmap(df, workflows, algos, title, outdir, name):
+    """Hypervolume as a percentage of the best algorithm on each workflow (100 = best)."""
+    mean = df.groupby(['workflow', 'algorithm'])['hypervolume'].mean().unstack()
+    rel = mean.loc[workflows, algos].div(mean.loc[workflows, algos].max(axis=1), axis=0) * 100
+    fig, ax = plt.subplots(figsize=(1.0 * len(algos) + 3, 0.34 * len(workflows) + 1.6))
+    im = ax.imshow(rel.values, cmap='YlGn', vmin=40, vmax=100, aspect='auto')
+    ax.set_xticks(range(len(algos)))
+    ax.set_xticklabels(algos, rotation=30, ha='right', fontsize=9)
+    ax.set_yticks(range(len(workflows)))
+    ax.set_yticklabels(workflows, fontsize=9)
+    for r in range(rel.shape[0]):
+        best = rel.iloc[r].max()
+        for c in range(rel.shape[1]):
+            v = rel.iloc[r, c]
+            ax.text(c, r, f'{v:.1f}', ha='center', va='center', fontsize=8,
+                    fontweight='bold' if v == best else 'normal')
+    ax.set_title(title, fontsize=10)
+    fig.colorbar(im, ax=ax, fraction=0.04, pad=0.02, label='% of best algorithm')
+    fig.tight_layout()
+    _save(fig, outdir, name)
+
+
+def default_mode(df, outdir, basename):
+    """Hypervolume, makespan and cost per workflow family, with the 24-100-task instances and the
+    997/1000-task instances in separate figures, plus a 'percent of best' heatmap for each group."""
+    algos = [a for a in ['HEFT', 'Min-Min', 'MLEAO', 'LIWSA', 'LIWSA-ML', 'NSGA-II'] if a in set(df['algorithm'])]
+    algos += [a for a in dict.fromkeys(df['algorithm']) if a not in algos]
+    groups = _groups(list(dict.fromkeys(df['workflow'])))
+    names = {'small': 'small and medium instances (24-100 tasks)', 'large': 'large instances (997-1000 tasks)'}
+    for g, wfs in groups.items():
+        if not wfs:
+            continue
+        for metric, label in [('hypervolume', 'Hypervolume (higher is better)'),
+                              ('makespan', 'Makespan [s] (lower is better)'),
+                              ('cost', 'Cost (lower is better)')]:
+            _panel_figure(df, metric, label, wfs, algos, f'{label.split(" (")[0]} -- {names[g]} -- {basename}',
+                          outdir, f'{basename}_{metric}_{g}')
+        _relative_heatmap(df, wfs, algos, f'Hypervolume, % of the best algorithm -- {names[g]}',
+                          outdir, f'{basename}_hypervolume_relative_{g}')
 
 
 def sweep_mode(df, outdir, basename, param_prefix):

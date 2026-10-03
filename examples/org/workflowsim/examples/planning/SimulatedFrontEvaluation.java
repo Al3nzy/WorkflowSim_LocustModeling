@@ -45,7 +45,9 @@ import org.workflowsim.utils.Parameters;
  * (planning-level) convention, hypervolume under simulator-measured points.
  *
  * Usage:
- *   java ... SimulatedFrontEvaluation "Montage_25,Sipht_30" 1,2,3,4,5 "Output&Results/simulated_front_eval.csv"
+ *   java ... SimulatedFrontEvaluation ALL 1,2,3,4,5 "Output&Results/simulated_A.csv" A
+ *   First argument: ALL (20 workflows), SMALL (the 15 of 24-100 tasks), LARGE (the 5 of 997-1000 tasks)
+ *   or a comma-separated list such as "Montage_25,Sipht_30".  Last argument: variant A, B or C.
  */
 public class SimulatedFrontEvaluation {
 
@@ -62,11 +64,13 @@ public class SimulatedFrontEvaluation {
     }
 
     public static void main(String[] args) throws Exception {
-        String[] names = args[0].split(",");
+        String[] names = ResultsPaths.expandWorkflowKeyword(args[0]).split(",");
         String[] seedStr = args.length > 1 ? args[1].split(",") : new String[]{"1", "2", "3", "4", "5"};
         String out = args.length > 2 ? args[2] : ResultsPaths.resolve("simulated_front_eval.csv");
         int pop = 30, gens = 100;
         Log.disable();
+        // optional 4th argument: A = published algorithm, B = + output archive, C = + archive + online learning
+        ResultsPaths.applyVariant(args.length > 3 ? args[3] : "A");
 
         PrintWriter pw = new PrintWriter(out);
         pw.println("workflow,algorithm,seed,replayed_members,sim_nondominated_points,"

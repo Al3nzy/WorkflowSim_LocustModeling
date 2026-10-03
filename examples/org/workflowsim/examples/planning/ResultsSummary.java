@@ -274,6 +274,62 @@ public final class ResultsSummary {
         return sb.toString();
     }
 
+    /**
+     * Relative hypervolume difference of algorithm a against algorithm b, in percent, over the
+     * workflows whose task count (the number after the last underscore in the workflow name) lies in
+     * [minTasks, maxTasks]. Uses the per-workflow mean of the first hypervolume column, so both
+     * algorithms are measured against the same reference point (they come from the same CSV).
+     * Returns {workflowsCompared, mean %, median %, workflowsWhereAIsHigher}, or null if none.
+     */
+    public static double[] relative(String csvPath, String a, String b, int minTasks, int maxTasks) {
+        try (BufferedReader br = new BufferedReader(new FileReader(csvPath))) {
+            String[] header = br.readLine().split(",", -1);
+            int iAlg = indexOf(header, "algorithm", "config", "run");
+            int iWf = indexOf(header, "workflow");
+            int iSeed = indexOf(header, "seed");
+            int iHv = -1;
+            for (int c = 0; c < header.length; c++) {
+                String h = header[c].toLowerCase();
+                if (iHv < 0 && (h.startsWith("hv") || h.startsWith("hypervolume"))) { iHv = c; }
+            }
+            if (iAlg < 0 || iWf < 0 || iHv < 0) { return null; }
+            Map<String, double[]> unique = new LinkedHashMap<>();
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] r = line.split(",", -1);
+                if (r.length < header.length) { continue; }
+                unique.put(r[iWf] + "|" + r[iAlg] + "|" + (iSeed >= 0 ? r[iSeed] : "0"),
+                    new double[]{num(r[iHv])});
+            }
+            Map<String, double[]> sums = new LinkedHashMap<>(); // wf|alg -> {sum, n}
+            for (Map.Entry<String, double[]> e : unique.entrySet()) {
+                String[] k = e.getKey().split("\\|");
+                String key = k[0] + "|" + k[1];
+                double[] t = sums.computeIfAbsent(key, x -> new double[2]);
+                t[0] += e.getValue()[0];
+                t[1] += 1;
+            }
+            List<Double> rel = new ArrayList<>();
+            int higher = 0;
+            Set<String> wfs = new java.util.LinkedHashSet<>();
+            for (String key : sums.keySet()) { wfs.add(key.split("\\|")[0]); }
+            for (String wf : wfs) {
+                int us = wf.lastIndexOf('_');
+                int size = us >= 0 ? (int) num(wf.substring(us + 1)) : 0;
+                if (size < minTasks || size > maxTasks) { continue; }
+                double[] x = sums.get(wf + "|" + a), y = sums.get(wf + "|" + b);
+                if (x == null || y == null) { continue; }
+                double d = (x[0] / x[1]) / (y[0] / y[1]) * 100.0 - 100.0;
+                rel.add(d);
+                if (d > 0) { higher++; }
+            }
+            if (rel.isEmpty()) { return null; }
+            return new double[]{rel.size(), avg(rel, false), avg(rel, true), higher};
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
     private static int indexOf(String[] header, String... names) {
         for (String n : names) {
             for (int i = 0; i < header.length; i++) {
