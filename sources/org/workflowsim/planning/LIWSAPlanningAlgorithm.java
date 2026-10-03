@@ -101,6 +101,15 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
      * elitism, seeding) held identical. Defaults to false (normal LIWSA).
      */
     public static boolean CONFIG_DENSITY_ABLATION = false;
+    /**
+     * Opt-in (default false, which reproduces the published behaviour exactly).
+     * When true, an external archive of every distinct non-dominated solution
+     * visited during the search (truncated by crowding distance to the
+     * population size) is kept and returned as the final front. The search
+     * itself is unchanged: the same random stream drives the same population
+     * trajectory; only the reported front and the committed schedule differ.
+     */
+    public static boolean CONFIG_OUTPUT_ARCHIVE = Boolean.getBoolean("liwsa.outputArchive");
 
     /**
      * Snapshot of the most recently completed run, published at the end of
@@ -119,9 +128,21 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
         public int paretoFrontSize;
         /** Each element is {makespan, cost} for one member of the final Pareto front. */
         public List<double[]> paretoFrontPoints;
+        /** For each front member (same order as paretoFrontPoints): cloudlet ID -> VM ID, so the member can be replayed in the simulator. */
+        public List<Map<Integer, Integer>> paretoFrontAssignments;
         public long searchWallClockMillis;
         public int populationSizeUsed;
         public int generationCountUsed;
+        /**
+         * Planning-level (decoder) {makespan, cost} of each externally supplied
+         * warm-start schedule, in the order supplied (HEFT first, then Min-Min,
+         * when both are provided), evaluated by the same decoder as every
+         * population member. Lets a benchmark score the deterministic baselines
+         * with the same evaluator as the population-based algorithms.
+         */
+        public List<double[]> seedPlanningPoints;
+        /** Total objective evaluations (genotype decodes), including any warm-start training decodes. */
+        public long objectiveEvaluations;
     }
 
     /**
@@ -164,17 +185,8 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
     protected int populationSize = CONFIG_POPULATION_SIZE;
     protected int generationCount = CONFIG_GENERATION_COUNT;
     private List<int[]> seedGenotypes;
-
-    private static class Event {
-
-        double start;
-        double finish;
-
-        Event(double start, double finish) {
-            this.start = start;
-            this.finish = finish;
-        }
-    }
+    private int externalSeedCount = 0;
+    private List<double[]> seedPlanningPoints = new ArrayList<>();
 
     public LIWSAPlanningAlgorithm() {
         this.populationSize = CONFIG_POPULATION_SIZE;
@@ -231,9 +243,16 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
         taskOrder = topologicalOrder(getTaskList());
         calculateComputationCosts();
         calculateTransferCosts();
+        prepareDecoder();
 
         initializePopulation();
+        allocateMoveBuffers();
+        archG = new ArrayList<>();
+        archP = new ArrayList<>();
         double tau = calibrateTau();
+        if (CONFIG_OUTPUT_ARCHIVE) {
+            archiveUpdate();
+        }
 
         for (int gen = 0; gen < generationCount; gen++) {
             int[] frontNumber = new int[populationSize];
@@ -252,6 +271,7 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
                 if (i == bestIndex) {
                     continue;
                 }
+                computeDistanceRows(i);
                 double density = CONFIG_DENSITY_ABLATION ? 0.5 : localDensity(i, tau);
                 double pSocial = (1 - lambdaMix) * ((double) gen / Math.max(generationCount, 1))
                         + lambdaMix * density;
@@ -271,6 +291,13 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
                     costs[i] = mc[1];
                 }
             }
+            if (CONFIG_OUTPUT_ARCHIVE) {
+                archiveUpdate();
+            }
+            observeGeneration(gen);
+            if (immigrantPeriod > 0 && (gen + 1) % immigrantPeriod == 0 && gen + 1 < generationCount) {
+                integrateImmigrants(proposeImmigrants(gen));
+            }
         }
 
         int[] finalFrontNumber = new int[populationSize];
@@ -284,15 +311,40 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
         metrics.chosenCost = costs[chosen];
         metrics.paretoFrontSize = finalFronts.get(0).size();
         metrics.paretoFrontPoints = new ArrayList<>();
+        metrics.paretoFrontAssignments = new ArrayList<>();
         for (int i : finalFronts.get(0)) {
             metrics.paretoFrontPoints.add(new double[]{makespans[i], costs[i]});
+            metrics.paretoFrontAssignments.add(toAssignment(population.get(i)));
+        }
+        int[] commitGenotype = population.get(chosen);
+        if (CONFIG_OUTPUT_ARCHIVE && !archP.isEmpty()) {
+            int best = 0;
+            for (int a = 1; a < archP.size(); a++) {
+                double[] pa = archP.get(a);
+                double[] pb = archP.get(best);
+                if (pa[0] < pb[0] || (pa[0] == pb[0] && pa[1] < pb[1])) {
+                    best = a;
+                }
+            }
+            metrics.chosenMakespan = archP.get(best)[0];
+            metrics.chosenCost = archP.get(best)[1];
+            metrics.paretoFrontSize = archP.size();
+            metrics.paretoFrontPoints = new ArrayList<>();
+            metrics.paretoFrontAssignments = new ArrayList<>();
+            for (int a = 0; a < archP.size(); a++) {
+                metrics.paretoFrontPoints.add(archP.get(a).clone());
+                metrics.paretoFrontAssignments.add(toAssignment(archG.get(a)));
+            }
+            commitGenotype = archG.get(best);
         }
         metrics.searchWallClockMillis = System.currentTimeMillis() - searchStartMillis;
         metrics.populationSizeUsed = populationSize;
         metrics.generationCountUsed = generationCount;
+        metrics.objectiveEvaluations = evaluationCount;
+        metrics.seedPlanningPoints = seedPlanningPoints;
         lastRun = metrics;
 
-        commitAssignment(population.get(chosen));
+        commitAssignment(commitGenotype);
 
         Log.printLine("LIWSA finished. Pareto front size: " + finalFronts.get(0).size()
                 + ", chosen makespan=" + makespans[chosen] + ", cost=" + costs[chosen]);
@@ -408,109 +460,174 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
     // (topological order + insertion-based per-VM scheduling, so there is
     // no separate repair step)
     // ---------------------------------------------------------------
-    private double findFinishTime(List<Event> sched, double readyTime, double duration, boolean occupySlot) {
-        if (sched.isEmpty()) {
-            if (occupySlot) {
-                sched.add(new Event(readyTime, readyTime + duration));
+    // Decoder: genotype -> (makespan, cost), feasible by construction
+    // (topological order + insertion-based per-VM scheduling, so there is
+    // no separate repair step).
+    //
+    // Implementation note: the decoder is allocation-free. Per-task parent
+    // indices, transfer costs, durations and VM prices are tabulated once
+    // per run in prepareDecoder(), and the per-VM busy intervals live in
+    // primitive arrays that are reused across calls. The arithmetic and
+    // the order of every floating-point operation are identical to the
+    // earlier Map/List-based decoder, so every (makespan, cost) pair it
+    // returns is bit-for-bit unchanged; only the running time differs.
+    // The same decoder is used verbatim by LIWSA, LIWSA-ML, NSGA-II and
+    // MLEAO so that search-time comparisons are not skewed by it.
+    // ---------------------------------------------------------------
+    private int decN;
+    private int[][] decParentIdx;
+    private double[][] decParentTransfer;
+    private double[][] decDuration;
+    private double[] decVmPrice;
+    private double[][] decEvStart;
+    private double[][] decEvFinish;
+    private int[] decEvCount;
+    private double[] decFinish;
+    private int[] decAssigned;
+    /** Number of objective evaluations (genotype decodes) performed in this run. */
+    protected long evaluationCount = 0;
+
+    private void prepareDecoder() {
+        int n = taskOrder.size();
+        int m = vmList.size();
+        decN = n;
+        Map<Task, Integer> index = new HashMap<>();
+        for (int k = 0; k < n; k++) {
+            index.put(taskOrder.get(k), k);
+        }
+        decParentIdx = new int[n][];
+        decParentTransfer = new double[n][];
+        decDuration = new double[n][m];
+        decVmPrice = new double[m];
+        for (int v = 0; v < m; v++) {
+            decVmPrice[v] = vmList.get(v).getCost();
+        }
+        for (int k = 0; k < n; k++) {
+            Task task = taskOrder.get(k);
+            List parents = task.getParentList();
+            decParentIdx[k] = new int[parents.size()];
+            decParentTransfer[k] = new double[parents.size()];
+            for (int q = 0; q < parents.size(); q++) {
+                Task parent = (Task) parents.get(q);
+                decParentIdx[k][q] = index.get(parent);
+                Double tc = transferCosts.get(parent).get(task);
+                decParentTransfer[k][q] = (tc != null) ? tc : 0.0;
             }
+            for (int v = 0; v < m; v++) {
+                decDuration[k][v] = computationCosts.get(task).get(vmList.get(v));
+            }
+        }
+        decEvStart = new double[m][n];
+        decEvFinish = new double[m][n];
+        decEvCount = new int[m];
+        decFinish = new double[n];
+        decAssigned = new int[n];
+    }
+
+    private void decInsert(int v, int pos, double start, double finish) {
+        int size = decEvCount[v];
+        double[] st = decEvStart[v];
+        double[] fi = decEvFinish[v];
+        if (pos < size) {
+            System.arraycopy(st, pos, st, pos + 1, size - pos);
+            System.arraycopy(fi, pos, fi, pos + 1, size - pos);
+        }
+        st[pos] = start;
+        fi[pos] = finish;
+        decEvCount[v] = size + 1;
+    }
+
+    /** Insertion-based slot search on VM v; returns the task's finish time and books the slot. */
+    private double placeOnVm(int v, double readyTime, double duration) {
+        double[] st = decEvStart[v];
+        double[] fi = decEvFinish[v];
+        int size = decEvCount[v];
+        if (size == 0) {
+            decInsert(v, 0, readyTime, readyTime + duration);
             return readyTime + duration;
         }
-
-        if (sched.size() == 1) {
+        if (size == 1) {
             double start;
             int pos;
-            if (readyTime >= sched.get(0).finish) {
+            if (readyTime >= fi[0]) {
                 pos = 1;
                 start = readyTime;
-            } else if (readyTime + duration <= sched.get(0).start) {
+            } else if (readyTime + duration <= st[0]) {
                 pos = 0;
                 start = readyTime;
             } else {
                 pos = 1;
-                start = sched.get(0).finish;
+                start = fi[0];
             }
-            if (occupySlot) {
-                sched.add(pos, new Event(start, start + duration));
-            }
+            decInsert(v, pos, start, start + duration);
             return start + duration;
         }
-
-        double start = Math.max(readyTime, sched.get(sched.size() - 1).finish);
+        double start = Math.max(readyTime, fi[size - 1]);
         double finish = start + duration;
-        int pos = sched.size();
-        int i = sched.size() - 1;
-        int j = sched.size() - 2;
+        int pos = size;
+        int i = size - 1;
+        int j = size - 2;
         while (j >= 0) {
-            Event current = sched.get(i);
-            Event previous = sched.get(j);
-            if (readyTime > previous.finish) {
-                if (readyTime + duration <= current.start) {
+            double currentStart = st[i];
+            double previousFinish = fi[j];
+            if (readyTime > previousFinish) {
+                if (readyTime + duration <= currentStart) {
                     start = readyTime;
                     finish = readyTime + duration;
                 }
                 break;
             }
-            if (previous.finish + duration <= current.start) {
-                start = previous.finish;
-                finish = previous.finish + duration;
+            if (previousFinish + duration <= currentStart) {
+                start = previousFinish;
+                finish = previousFinish + duration;
                 pos = i;
             }
             i--;
             j--;
         }
-
-        if (readyTime + duration <= sched.get(0).start) {
-            pos = 0;
-            start = readyTime;
-            if (occupySlot) {
-                sched.add(pos, new Event(start, start + duration));
-            }
-            return start + duration;
+        if (readyTime + duration <= st[0]) {
+            decInsert(v, 0, readyTime, readyTime + duration);
+            return readyTime + duration;
         }
-
-        if (occupySlot) {
-            sched.add(pos, new Event(start, finish));
-        }
+        decInsert(v, pos, start, finish);
         return finish;
     }
 
     protected double[] decode(int[] genotype) {
-        Map<CondorVM, List<Event>> schedules = new HashMap<>();
-        for (CondorVM vm : vmList) {
-            schedules.put(vm, new ArrayList<Event>());
-        }
-        Map<Task, Double> finish = new HashMap<>();
-        Map<Task, CondorVM> assignedVm = new HashMap<>();
+        evaluationCount++;
+        java.util.Arrays.fill(decEvCount, 0);
         double cost = 0.0;
-
-        for (int k = 0; k < taskOrder.size(); k++) {
-            Task task = taskOrder.get(k);
-            CondorVM vm = vmList.get(genotype[k]);
-
+        double makespan = 0.0;
+        for (int k = 0; k < decN; k++) {
+            int v = genotype[k];
             double ready = 0.0;
-            for (Object parentObj : task.getParentList()) {
-                Task parent = (Task) parentObj;
-                double pf = finish.get(parent);
-                if (assignedVm.get(parent) != vm) {
-                    Double tc = transferCosts.get(parent).get(task);
-                    pf += (tc != null) ? tc : 0.0;
+            int[] parents = decParentIdx[k];
+            double[] transfer = decParentTransfer[k];
+            for (int q = 0; q < parents.length; q++) {
+                int p = parents[q];
+                double pf = decFinish[p];
+                if (decAssigned[p] != v) {
+                    pf += transfer[q];
                 }
                 ready = Math.max(ready, pf);
             }
-
-            double duration = computationCosts.get(task).get(vm);
-            double fin = findFinishTime(schedules.get(vm), ready, duration, true);
-
-            finish.put(task, fin);
-            assignedVm.put(task, vm);
-            cost += duration * vm.getCost();
-        }
-
-        double makespan = 0.0;
-        for (double f : finish.values()) {
-            makespan = Math.max(makespan, f);
+            double duration = decDuration[k][v];
+            double fin = placeOnVm(v, ready, duration);
+            decFinish[k] = fin;
+            decAssigned[k] = v;
+            cost += duration * decVmPrice[v];
+            makespan = Math.max(makespan, fin);
         }
         return new double[]{makespan, cost};
+    }
+
+    /** cloudlet ID -> VM ID map for a genotype, usable as a warm-start / replay schedule. */
+    private Map<Integer, Integer> toAssignment(int[] genotype) {
+        Map<Integer, Integer> map = new HashMap<>();
+        for (int k = 0; k < taskOrder.size(); k++) {
+            map.put(taskOrder.get(k).getCloudletId(), vmList.get(genotype[k]).getId());
+        }
+        return map;
     }
 
     private void commitAssignment(int[] genotype) {
@@ -537,6 +654,7 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
     protected List<int[]> generateSeedGenotypes() {
         List<int[]> seeds = (seedGenotypes != null) ? new ArrayList<>(seedGenotypes) : new ArrayList<>();
         seeds.addAll(buildSeedsFromAssignments());
+        externalSeedCount = seeds.size();
         return seeds;
     }
 
@@ -603,6 +721,10 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
             double[] mc = decode(population.get(i));
             makespans[i] = mc[0];
             costs[i] = mc[1];
+        }
+        seedPlanningPoints = new ArrayList<>();
+        for (int i = 0; i < Math.min(externalSeedCount, populationSize); i++) {
+            seedPlanningPoints.add(new double[]{makespans[i], costs[i]});
         }
     }
 
@@ -688,6 +810,160 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
         return fronts;
     }
 
+    // Per-individual caches, valid for the individual currently being moved.
+    // The population changes only when an accepted child replaces its
+    // parent at the end of that individual's turn, so one distance row and
+    // one kernel row per turn is exactly what the operators need; the
+    // earlier implementation recomputed the same Hamming distance for
+    // every task of the genotype inside the solitary vote (n times more
+    // work, same values).
+    private double[] distRow;
+    private double[] kernRow;
+    private int[] voterIdx;
+    private double[] voterWeight;
+    private int[][] voterGenotype;
+    private double[] voteSum;
+    private boolean[] votePresent;
+    private int[] optionVm;
+    private double[] optionProb;
+
+    // ---- extension hooks (no-ops here; LIWSA-ML overrides them for online learning) ----
+    /** If > 0, proposeImmigrants() is consulted every this many generations. */
+    protected int immigrantPeriod = 0;
+
+    /** Called once per generation after the population has been updated. */
+    protected void observeGeneration(int gen) {
+    }
+
+    /** Candidate genotypes to inject during the search; every one is decoded and counted as an evaluation. */
+    protected List<int[]> proposeImmigrants(int gen) {
+        return new ArrayList<>();
+    }
+
+    /**
+     * Each immigrant replaces the worst-ranked individual not on the first
+     * front (one victim per immigrant), unless that individual strictly
+     * dominates it. The first front is never displaced.
+     */
+    private void integrateImmigrants(List<int[]> immigrants) {
+        if (immigrants == null || immigrants.isEmpty()) {
+            return;
+        }
+        int[] frontNumber = new int[populationSize];
+        nonDominatedSort(frontNumber);
+        boolean[] used = new boolean[populationSize];
+        for (int[] g : immigrants) {
+            double[] mc = decode(g);
+            int victim = -1;
+            for (int i = 0; i < populationSize; i++) {
+                if (used[i] || frontNumber[i] == 0) {
+                    continue;
+                }
+                if (victim < 0 || frontNumber[i] > frontNumber[victim]) {
+                    victim = i;
+                }
+            }
+            if (victim < 0) {
+                continue;
+            }
+            used[victim] = true;
+            if (!dominates(makespans[victim], costs[victim], mc[0], mc[1])) {
+                population.set(victim, g);
+                makespans[victim] = mc[0];
+                costs[victim] = mc[1];
+            }
+        }
+        if (CONFIG_OUTPUT_ARCHIVE) {
+            archiveUpdate();
+        }
+    }
+
+    // ---- optional external archive (see CONFIG_OUTPUT_ARCHIVE) ----
+    private List<int[]> archG = new ArrayList<>();
+    private List<double[]> archP = new ArrayList<>();
+
+    private void archiveUpdate() {
+        for (int i = 0; i < populationSize; i++) {
+            archiveConsider(population.get(i), makespans[i], costs[i]);
+        }
+    }
+
+    private void archiveConsider(int[] genotype, double mk, double cost) {
+        for (double[] a : archP) {
+            if (a[0] <= mk && a[1] <= cost) {
+                return; // weakly dominated (includes an identical objective vector)
+            }
+        }
+        for (int a = archP.size() - 1; a >= 0; a--) {
+            double[] p = archP.get(a);
+            if (mk <= p[0] && cost <= p[1]) {
+                archP.remove(a);
+                archG.remove(a);
+            }
+        }
+        archG.add(genotype.clone());
+        archP.add(new double[]{mk, cost});
+        while (archP.size() > populationSize) {
+            archiveDropMostCrowded();
+        }
+    }
+
+    private void archiveDropMostCrowded() {
+        int sz = archP.size();
+        Integer[] order = new Integer[sz];
+        for (int i = 0; i < sz; i++) {
+            order[i] = i;
+        }
+        java.util.Arrays.sort(order, (x, y) -> Double.compare(archP.get(x)[0], archP.get(y)[0]));
+        double minM = archP.get(order[0])[0], maxM = archP.get(order[sz - 1])[0];
+        double minC = Double.POSITIVE_INFINITY, maxC = Double.NEGATIVE_INFINITY;
+        for (double[] p : archP) {
+            minC = Math.min(minC, p[1]);
+            maxC = Math.max(maxC, p[1]);
+        }
+        double rm = Math.max(maxM - minM, 1e-12), rc = Math.max(maxC - minC, 1e-12);
+        double worst = Double.POSITIVE_INFINITY;
+        int drop = -1;
+        for (int r = 1; r < sz - 1; r++) {
+            double[] lo = archP.get(order[r - 1]), hi = archP.get(order[r + 1]);
+            double crowd = (hi[0] - lo[0]) / rm + Math.abs(lo[1] - hi[1]) / rc;
+            if (crowd < worst) {
+                worst = crowd;
+                drop = order[r];
+            }
+        }
+        if (drop < 0) {
+            drop = order[sz - 1];
+        }
+        archP.remove(drop);
+        archG.remove(drop);
+    }
+
+    private void allocateMoveBuffers() {
+        int p = populationSize;
+        int m = vmList.size();
+        distRow = new double[p];
+        kernRow = new double[p];
+        voterIdx = new int[p];
+        voterWeight = new double[p];
+        voterGenotype = new int[p][];
+        voteSum = new double[m];
+        votePresent = new boolean[m];
+        optionVm = new int[m];
+        optionProb = new double[m];
+    }
+
+    private void computeDistanceRows(int i) {
+        int[] gi = population.get(i);
+        for (int j = 0; j < populationSize; j++) {
+            if (j == i) {
+                continue;
+            }
+            distRow[j] = hamming(gi, population.get(j));
+            kernRow[j] = kernel(distRow[j]);
+        }
+    }
+
     private double localDensity(int i, double tau) {
         int n = populationSize - 1;
         if (n <= 0) {
@@ -695,7 +971,7 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
         }
         int count = 0;
         for (int j = 0; j < populationSize; j++) {
-            if (j != i && hamming(population.get(i), population.get(j)) < tau) {
+            if (j != i && distRow[j] < tau) {
                 count++;
             }
         }
@@ -728,42 +1004,82 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
      * for that task is resampled from a softmax over the accumulated
      * votes. This is the discrete stand-in for summing continuous
      * attraction/repulsion force vectors.
+     *
+     * The voter weights depend only on the voter's front and its distance
+     * to individual i, so they are formed once per call; each task then
+     * costs one pass over the voters. Candidate VMs are visited in
+     * ascending index order, which is the iteration order the earlier
+     * HashMap-based tally produced for VM pools of at most 16 machines.
      */
     private int[] solitaryMove(int i, int[] frontNumber) {
         int n = taskOrder.size();
+        int m = vmList.size();
         int[] child = population.get(i).clone();
-        for (int k = 0; k < n; k++) {
-            Map<Integer, Double> votes = new HashMap<>();
-            for (int j = 0; j < populationSize; j++) {
-                if (j == i || frontNumber[j] == frontNumber[i]) {
-                    continue;
-                }
-                double sign = (frontNumber[j] < frontNumber[i]) ? 1.0 : -1.0;
-                double d = hamming(population.get(i), population.get(j));
-                double w = sign * kernel(d);
-                int v = population.get(j)[k];
-                votes.put(v, votes.getOrDefault(v, 0.0) + w);
+
+        int nv = 0;
+        for (int j = 0; j < populationSize; j++) {
+            if (j == i || frontNumber[j] == frontNumber[i]) {
+                continue;
             }
-            if (!votes.isEmpty() && random.nextDouble() < blendProbability) {
-                List<Integer> vmsList = new ArrayList<>(votes.keySet());
+            double sign = (frontNumber[j] < frontNumber[i]) ? 1.0 : -1.0;
+            voterIdx[nv] = j;
+            voterWeight[nv] = sign * kernRow[j];
+            voterGenotype[nv] = population.get(j);
+            nv++;
+        }
+
+        for (int k = 0; k < n; k++) {
+            java.util.Arrays.fill(voteSum, 0.0);
+            java.util.Arrays.fill(votePresent, false);
+            for (int q = 0; q < nv; q++) {
+                int v = voterGenotype[q][k];
+                voteSum[v] += voterWeight[q];
+                votePresent[v] = true;
+            }
+            if (nv > 0 && random.nextDouble() < blendProbability) {
                 double max = Double.NEGATIVE_INFINITY;
-                for (int v : vmsList) {
-                    max = Math.max(max, votes.get(v));
+                for (int v = 0; v < m; v++) {
+                    if (votePresent[v]) {
+                        max = Math.max(max, voteSum[v]);
+                    }
                 }
-                List<Double> probs = new ArrayList<>();
+                int cnt = 0;
                 double sum = 0.0;
-                for (int v : vmsList) {
-                    double e = Math.exp(votes.get(v) - max);
-                    probs.add(e);
-                    sum += e;
+                for (int v = 0; v < m; v++) {
+                    if (votePresent[v]) {
+                        double e = Math.exp(voteSum[v] - max);
+                        optionVm[cnt] = v;
+                        optionProb[cnt] = e;
+                        sum += e;
+                        cnt++;
+                    }
                 }
-                for (int idx = 0; idx < probs.size(); idx++) {
-                    probs.set(idx, probs.get(idx) / sum);
+                for (int c = 0; c < cnt; c++) {
+                    optionProb[c] = optionProb[c] / sum;
                 }
-                child[k] = weightedChoice(vmsList, probs);
+                child[k] = weightedChoiceArray(cnt);
             }
         }
         return child;
+    }
+
+    private int weightedChoiceArray(int cnt) {
+        double total = 0.0;
+        for (int c = 0; c < cnt; c++) {
+            total += optionProb[c];
+        }
+        if (total <= 0) {
+            return optionVm[random.nextInt(cnt)];
+        }
+        double r = random.nextDouble() * total;
+        double acc = 0.0;
+        for (int c = 0; c < cnt; c++) {
+            acc += optionProb[c];
+            if (r <= acc) {
+                return optionVm[c];
+            }
+        }
+        return optionVm[cnt - 1];
     }
 
     /**
@@ -783,13 +1099,11 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
         }
         List<Double> weights = new ArrayList<>();
         for (int e : candidates) {
-            double d = hamming(population.get(i), population.get(e));
-            weights.add(kernel(d) / (frontNumber[e] + 1));
+            weights.add(kernRow[e] / (frontNumber[e] + 1));
         }
         int partner = weightedChoice(candidates, weights);
         int[] Y = population.get(partner);
-        double dIY = hamming(population.get(i), Y);
-        double pCopy = Math.max(0.0, Math.min(1.0, copyAlpha * kernel(dIY)));
+        double pCopy = Math.max(0.0, Math.min(1.0, copyAlpha * kernRow[partner]));
 
         int[] child = population.get(i).clone();
         for (int k = 0; k < child.length; k++) {

@@ -103,9 +103,13 @@ public class MLEAOPlanningAlgorithm extends BasePlanningAlgorithm {
         public double chosenCost;
         public int paretoFrontSize;
         public List<double[]> paretoFrontPoints;
+        /** For each front member (same order as paretoFrontPoints): cloudlet ID -> VM ID, so the member can be replayed in the simulator. */
+        public List<Map<Integer, Integer>> paretoFrontAssignments;
         public long searchWallClockMillis;
         public int populationSizeUsed;
         public int generationCountUsed;
+        /** Total objective evaluations (genotype decodes), including any warm-start training decodes. */
+        public long objectiveEvaluations;
     }
 
     // ---- problem data, set once at the start of run() ----
@@ -124,17 +128,6 @@ public class MLEAOPlanningAlgorithm extends BasePlanningAlgorithm {
     private double[] volume;
     private double[] acceleration;
     private List<int[]> seedGenotypes;
-
-    private static class Event {
-
-        double start;
-        double finish;
-
-        Event(double start, double finish) {
-            this.start = start;
-            this.finish = finish;
-        }
-    }
 
     public MLEAOPlanningAlgorithm() {
         this.populationSize = CONFIG_POPULATION_SIZE;
@@ -188,6 +181,7 @@ public class MLEAOPlanningAlgorithm extends BasePlanningAlgorithm {
         taskOrder = topologicalOrder(getTaskList());
         calculateComputationCosts();
         calculateTransferCosts();
+        prepareDecoder();
 
         initializePopulation();
 
@@ -266,12 +260,15 @@ public class MLEAOPlanningAlgorithm extends BasePlanningAlgorithm {
         metrics.chosenCost = costs[chosen];
         metrics.paretoFrontSize = finalFronts.get(0).size();
         metrics.paretoFrontPoints = new ArrayList<>();
+        metrics.paretoFrontAssignments = new ArrayList<>();
         for (int i : finalFronts.get(0)) {
             metrics.paretoFrontPoints.add(new double[]{makespans[i], costs[i]});
+            metrics.paretoFrontAssignments.add(toAssignment(population.get(i)));
         }
         metrics.searchWallClockMillis = System.currentTimeMillis() - searchStartMillis;
         metrics.populationSizeUsed = populationSize;
         metrics.generationCountUsed = generationCount;
+        metrics.objectiveEvaluations = evaluationCount;
         lastRun = metrics;
 
         commitAssignment(population.get(chosen));
@@ -437,109 +434,175 @@ public class MLEAOPlanningAlgorithm extends BasePlanningAlgorithm {
         return acc * 8 / averageBandwidth;
     }
 
-    private double findFinishTime(List<Event> sched, double readyTime, double duration, boolean occupySlot) {
-        if (sched.isEmpty()) {
-            if (occupySlot) {
-                sched.add(new Event(readyTime, readyTime + duration));
+    // ---------------------------------------------------------------
+    // Decoder: genotype -> (makespan, cost), feasible by construction
+    // (topological order + insertion-based per-VM scheduling, so there is
+    // no separate repair step).
+    //
+    // Implementation note: the decoder is allocation-free. Per-task parent
+    // indices, transfer costs, durations and VM prices are tabulated once
+    // per run in prepareDecoder(), and the per-VM busy intervals live in
+    // primitive arrays that are reused across calls. The arithmetic and
+    // the order of every floating-point operation are identical to the
+    // earlier Map/List-based decoder, so every (makespan, cost) pair it
+    // returns is bit-for-bit unchanged; only the running time differs.
+    // The same decoder is used verbatim by LIWSA, LIWSA-ML, NSGA-II and
+    // MLEAO so that search-time comparisons are not skewed by it.
+    // ---------------------------------------------------------------
+    private int decN;
+    private int[][] decParentIdx;
+    private double[][] decParentTransfer;
+    private double[][] decDuration;
+    private double[] decVmPrice;
+    private double[][] decEvStart;
+    private double[][] decEvFinish;
+    private int[] decEvCount;
+    private double[] decFinish;
+    private int[] decAssigned;
+    /** Number of objective evaluations (genotype decodes) performed in this run. */
+    protected long evaluationCount = 0;
+
+    private void prepareDecoder() {
+        int n = taskOrder.size();
+        int m = vmList.size();
+        decN = n;
+        Map<Task, Integer> index = new HashMap<>();
+        for (int k = 0; k < n; k++) {
+            index.put(taskOrder.get(k), k);
+        }
+        decParentIdx = new int[n][];
+        decParentTransfer = new double[n][];
+        decDuration = new double[n][m];
+        decVmPrice = new double[m];
+        for (int v = 0; v < m; v++) {
+            decVmPrice[v] = vmList.get(v).getCost();
+        }
+        for (int k = 0; k < n; k++) {
+            Task task = taskOrder.get(k);
+            List parents = task.getParentList();
+            decParentIdx[k] = new int[parents.size()];
+            decParentTransfer[k] = new double[parents.size()];
+            for (int q = 0; q < parents.size(); q++) {
+                Task parent = (Task) parents.get(q);
+                decParentIdx[k][q] = index.get(parent);
+                Double tc = transferCosts.get(parent).get(task);
+                decParentTransfer[k][q] = (tc != null) ? tc : 0.0;
             }
+            for (int v = 0; v < m; v++) {
+                decDuration[k][v] = computationCosts.get(task).get(vmList.get(v));
+            }
+        }
+        decEvStart = new double[m][n];
+        decEvFinish = new double[m][n];
+        decEvCount = new int[m];
+        decFinish = new double[n];
+        decAssigned = new int[n];
+    }
+
+    private void decInsert(int v, int pos, double start, double finish) {
+        int size = decEvCount[v];
+        double[] st = decEvStart[v];
+        double[] fi = decEvFinish[v];
+        if (pos < size) {
+            System.arraycopy(st, pos, st, pos + 1, size - pos);
+            System.arraycopy(fi, pos, fi, pos + 1, size - pos);
+        }
+        st[pos] = start;
+        fi[pos] = finish;
+        decEvCount[v] = size + 1;
+    }
+
+    /** Insertion-based slot search on VM v; returns the task's finish time and books the slot. */
+    private double placeOnVm(int v, double readyTime, double duration) {
+        double[] st = decEvStart[v];
+        double[] fi = decEvFinish[v];
+        int size = decEvCount[v];
+        if (size == 0) {
+            decInsert(v, 0, readyTime, readyTime + duration);
             return readyTime + duration;
         }
-
-        if (sched.size() == 1) {
+        if (size == 1) {
             double start;
             int pos;
-            if (readyTime >= sched.get(0).finish) {
+            if (readyTime >= fi[0]) {
                 pos = 1;
                 start = readyTime;
-            } else if (readyTime + duration <= sched.get(0).start) {
+            } else if (readyTime + duration <= st[0]) {
                 pos = 0;
                 start = readyTime;
             } else {
                 pos = 1;
-                start = sched.get(0).finish;
+                start = fi[0];
             }
-            if (occupySlot) {
-                sched.add(pos, new Event(start, start + duration));
-            }
+            decInsert(v, pos, start, start + duration);
             return start + duration;
         }
-
-        double start = Math.max(readyTime, sched.get(sched.size() - 1).finish);
+        double start = Math.max(readyTime, fi[size - 1]);
         double finish = start + duration;
-        int pos = sched.size();
-        int i = sched.size() - 1;
-        int j = sched.size() - 2;
+        int pos = size;
+        int i = size - 1;
+        int j = size - 2;
         while (j >= 0) {
-            Event current = sched.get(i);
-            Event previous = sched.get(j);
-            if (readyTime > previous.finish) {
-                if (readyTime + duration <= current.start) {
+            double currentStart = st[i];
+            double previousFinish = fi[j];
+            if (readyTime > previousFinish) {
+                if (readyTime + duration <= currentStart) {
                     start = readyTime;
                     finish = readyTime + duration;
                 }
                 break;
             }
-            if (previous.finish + duration <= current.start) {
-                start = previous.finish;
-                finish = previous.finish + duration;
+            if (previousFinish + duration <= currentStart) {
+                start = previousFinish;
+                finish = previousFinish + duration;
                 pos = i;
             }
             i--;
             j--;
         }
-
-        if (readyTime + duration <= sched.get(0).start) {
-            pos = 0;
-            start = readyTime;
-            if (occupySlot) {
-                sched.add(pos, new Event(start, start + duration));
-            }
-            return start + duration;
+        if (readyTime + duration <= st[0]) {
+            decInsert(v, 0, readyTime, readyTime + duration);
+            return readyTime + duration;
         }
-
-        if (occupySlot) {
-            sched.add(pos, new Event(start, finish));
-        }
+        decInsert(v, pos, start, finish);
         return finish;
     }
 
     private double[] decode(int[] genotype) {
-        Map<CondorVM, List<Event>> schedules = new HashMap<>();
-        for (CondorVM vm : vmList) {
-            schedules.put(vm, new ArrayList<Event>());
-        }
-        Map<Task, Double> finish = new HashMap<>();
-        Map<Task, CondorVM> assignedVm = new HashMap<>();
+        evaluationCount++;
+        java.util.Arrays.fill(decEvCount, 0);
         double cost = 0.0;
-
-        for (int k = 0; k < taskOrder.size(); k++) {
-            Task task = taskOrder.get(k);
-            CondorVM vm = vmList.get(genotype[k]);
-
+        double makespan = 0.0;
+        for (int k = 0; k < decN; k++) {
+            int v = genotype[k];
             double ready = 0.0;
-            for (Object parentObj : task.getParentList()) {
-                Task parent = (Task) parentObj;
-                double pf = finish.get(parent);
-                if (assignedVm.get(parent) != vm) {
-                    Double tc = transferCosts.get(parent).get(task);
-                    pf += (tc != null) ? tc : 0.0;
+            int[] parents = decParentIdx[k];
+            double[] transfer = decParentTransfer[k];
+            for (int q = 0; q < parents.length; q++) {
+                int p = parents[q];
+                double pf = decFinish[p];
+                if (decAssigned[p] != v) {
+                    pf += transfer[q];
                 }
                 ready = Math.max(ready, pf);
             }
-
-            double duration = computationCosts.get(task).get(vm);
-            double fin = findFinishTime(schedules.get(vm), ready, duration, true);
-
-            finish.put(task, fin);
-            assignedVm.put(task, vm);
-            cost += duration * vm.getCost();
-        }
-
-        double makespan = 0.0;
-        for (double f : finish.values()) {
-            makespan = Math.max(makespan, f);
+            double duration = decDuration[k][v];
+            double fin = placeOnVm(v, ready, duration);
+            decFinish[k] = fin;
+            decAssigned[k] = v;
+            cost += duration * decVmPrice[v];
+            makespan = Math.max(makespan, fin);
         }
         return new double[]{makespan, cost};
+    }
+
+    /** cloudlet ID -> VM ID map for a genotype, usable as a warm-start / replay schedule. */
+    private Map<Integer, Integer> toAssignment(int[] genotype) {
+        Map<Integer, Integer> map = new HashMap<>();
+        for (int k = 0; k < taskOrder.size(); k++) {
+            map.put(taskOrder.get(k).getCloudletId(), vmList.get(genotype[k]).getId());
+        }
+        return map;
     }
 
     private void commitAssignment(int[] genotype) {

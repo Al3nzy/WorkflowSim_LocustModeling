@@ -37,6 +37,17 @@ public class HEFTPlanningAlgorithm extends BasePlanningAlgorithm {
 
     private Map<Task, Map<CondorVM, Double>> computationCosts;
     private Map<Task, Map<Task, Double>> transferCosts;
+    /**
+     * HEFT breaks rank ties, and sums per-VM costs, in HashMap iteration order
+     * keyed by object identity hash. That order depends on the JVM's history
+     * (even adding an unrelated class changes it), so on instances with ties
+     * HEFT's schedule, and with it every warm-started algorithm, can differ
+     * between builds or JVMs. Default: ties are broken by task-list order, so
+     * results are identical on every run. Run with -Dliwsa.legacyHeftTies=true
+     * to restore the original hash-order behaviour.
+     */
+    public static boolean LEGACY_HASH_ORDER = Boolean.getBoolean("liwsa.legacyHeftTies");
+
     private Map<Task, Double> rank;
     private Map<CondorVM, List<Event>> schedules;
     private Map<Task, Double> earliestFinishTimes;
@@ -215,8 +226,18 @@ public class HEFTPlanningAlgorithm extends BasePlanningAlgorithm {
 
         double averageComputationCost = 0.0;
 
-        for (Double cost : computationCosts.get(task).values()) {
-            averageComputationCost += cost;
+        if (LEGACY_HASH_ORDER) {
+            for (Double cost : computationCosts.get(task).values()) {
+                averageComputationCost += cost;
+            }
+        } else {
+            // Sum in VM-list order. HashMap.values() order depends on the
+            // identity hash codes of the CondorVM keys, and floating-point
+            // addition is not associative, so the legacy loop could change
+            // the last bits of a rank from one JVM run to the next.
+            for (Object vmObject : getVmList()) {
+                averageComputationCost += computationCosts.get(task).get((CondorVM) vmObject);
+            }
         }
 
         averageComputationCost /= computationCosts.get(task).size();
@@ -238,8 +259,19 @@ public class HEFTPlanningAlgorithm extends BasePlanningAlgorithm {
      */
     private void allocateTasks() {
         List<TaskRank> taskRank = new ArrayList<>();
-        for (Task task : rank.keySet()) {
-            taskRank.add(new TaskRank(task, rank.get(task)));
+        if (LEGACY_HASH_ORDER) {
+            for (Task task : rank.keySet()) {
+                taskRank.add(new TaskRank(task, rank.get(task)));
+            }
+        } else {
+            // Collections.sort is stable, so tasks with equal rank keep
+            // task-list order. Iterating rank.keySet() (a HashMap keyed by
+            // Task, i.e. by identity hash) made tie order, and hence HEFT's
+            // schedule, depend on unrelated allocation history.
+            for (Object taskObject : getTaskList()) {
+                Task task = (Task) taskObject;
+                taskRank.add(new TaskRank(task, rank.get(task)));
+            }
         }
 
         // Sorting in non-ascending order of rank

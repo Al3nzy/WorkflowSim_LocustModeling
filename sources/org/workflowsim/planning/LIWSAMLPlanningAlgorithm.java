@@ -99,6 +99,15 @@ public class LIWSAMLPlanningAlgorithm extends LIWSAPlanningAlgorithm {
     public static int CONFIG_NUM_PREDICTOR_SEEDS = 4;
     public static double CONFIG_PRED_TEMPERATURE = 0.5;
     public static boolean CONFIG_NAIVE_FEATURES = false;
+    /**
+     * Opt-in (default false: published behaviour, bit-identical). When true the
+     * predictor keeps learning during the search: every schedule the search
+     * evaluates is added to the OLS training data, the model is refitted from
+     * all data seen so far every CONFIG_ONLINE_PERIOD generations, and
+     * numPredictorSeeds fresh model-biased genotypes are injected as immigrants.
+     */
+    public static boolean CONFIG_ONLINE_LEARNING = Boolean.getBoolean("liwsa.onlineLearning");
+    public static int CONFIG_ONLINE_PERIOD = Integer.getInteger("liwsa.onlinePeriod", 10);
 
     // ---- learned model coefficients ----
     private double[] coefMakespan = null;
@@ -121,6 +130,9 @@ public class LIWSAMLPlanningAlgorithm extends LIWSAPlanningAlgorithm {
         this.numTrainingSamples = CONFIG_NUM_TRAINING_SAMPLES;
         this.predTemperature = CONFIG_PRED_TEMPERATURE;
         setNumPredictorSeeds(CONFIG_NUM_PREDICTOR_SEEDS);
+        if (CONFIG_ONLINE_LEARNING) {
+            this.immigrantPeriod = CONFIG_ONLINE_PERIOD;
+        }
     }
 
     public void setNumTrainingSamples(int numTrainingSamples) {
@@ -243,6 +255,9 @@ public class LIWSAMLPlanningAlgorithm extends LIWSAPlanningAlgorithm {
         int n = taskOrder.size();
         int m = vmList.size();
         int rows = numTrainingSamples * n;
+        if (CONFIG_ONLINE_LEARNING) {
+            initOnline();
+        }
 
         Map<Task, Integer> depthMap = new HashMap<>();
         for (Task t : taskOrder) { computeDepth(t, depthMap); }
@@ -261,6 +276,9 @@ public class LIWSAMLPlanningAlgorithm extends LIWSAPlanningAlgorithm {
             double[] result = decode(genotype);
             double makespan = result[0];
             double cost     = result[1];
+            if (CONFIG_ONLINE_LEARNING) {
+                onlineAdd(genotype, makespan, cost);
+            }
 
             for (int k = 0; k < n; k++) {
                 Task t = taskOrder.get(k);
@@ -361,6 +379,127 @@ public class LIWSAMLPlanningAlgorithm extends LIWSAPlanningAlgorithm {
     // ---------------------------------------------------------------
     // Prediction and biased genotype generation
     // ---------------------------------------------------------------
+
+    // ---------------------------------------------------------------
+    // Online learning (opt-in). Sufficient statistics per (task, VM):
+    // how often the pair occurred and the sum of the schedule-level
+    // targets of the schedules it occurred in. XtX, Xty and therefore the
+    // OLS solution over ALL data seen so far follow exactly from them.
+    // ---------------------------------------------------------------
+    private double[][][] onlineFeat;
+    private int[][] onlineCount;
+    private double[][] onlineSumM;
+    private double[][] onlineSumC;
+
+    private void initOnline() {
+        int n = taskOrder.size();
+        int m = vmList.size();
+        Map<Task, Integer> depthMap = new HashMap<>();
+        for (Task t : taskOrder) { computeDepth(t, depthMap); }
+        onlineFeat = new double[n][m][];
+        for (int k = 0; k < n; k++) {
+            for (int v = 0; v < m; v++) {
+                onlineFeat[k][v] = extractFeatures(taskOrder.get(k), vmList.get(v), depthMap);
+            }
+        }
+        onlineCount = new int[n][m];
+        onlineSumM = new double[n][m];
+        onlineSumC = new double[n][m];
+    }
+
+    private void onlineAdd(int[] genotype, double makespan, double cost) {
+        for (int k = 0; k < genotype.length; k++) {
+            int v = genotype[k];
+            onlineCount[k][v]++;
+            onlineSumM[k][v] += makespan;
+            onlineSumC[k][v] += cost;
+        }
+    }
+
+    @Override
+    protected void observeGeneration(int gen) {
+        if (!CONFIG_ONLINE_LEARNING) {
+            return;
+        }
+        for (int i = 0; i < populationSize; i++) {
+            onlineAdd(population.get(i), makespans[i], costs[i]);
+        }
+    }
+
+    @Override
+    protected List<int[]> proposeImmigrants(int gen) {
+        if (!CONFIG_ONLINE_LEARNING) {
+            return new ArrayList<>();
+        }
+        int p = N_FEATURES;
+        double[][] xtx = new double[p][p];
+        double[] xtyM = new double[p];
+        double[] xtyC = new double[p];
+        for (int k = 0; k < onlineCount.length; k++) {
+            for (int v = 0; v < onlineCount[k].length; v++) {
+                int c = onlineCount[k][v];
+                if (c == 0) {
+                    continue;
+                }
+                double[] x = onlineFeat[k][v];
+                for (int i = 0; i < p; i++) {
+                    for (int j = 0; j < p; j++) {
+                        xtx[i][j] += c * x[i] * x[j];
+                    }
+                    xtyM[i] += x[i] * onlineSumM[k][v];
+                    xtyC[i] += x[i] * onlineSumC[k][v];
+                }
+            }
+        }
+        coefMakespan = solveNormalEquations(xtx, xtyM);
+        coefCost = solveNormalEquations(xtx, xtyC);
+        return buildBiasedGenotypes();
+    }
+
+    /** Same elimination as solveOLS, starting from the normal equations. */
+    private double[] solveNormalEquations(double[][] xtx, double[] xty) {
+        int p = N_FEATURES;
+        double[][] aug = new double[p][p + 1];
+        for (int i = 0; i < p; i++) {
+            System.arraycopy(xtx[i], 0, aug[i], 0, p);
+            aug[i][p] = xty[i];
+        }
+        for (int col = 0; col < p; col++) {
+            int pivotRow = col;
+            double maxVal = Math.abs(aug[col][col]);
+            for (int r = col + 1; r < p; r++) {
+                if (Math.abs(aug[r][col]) > maxVal) {
+                    maxVal = Math.abs(aug[r][col]);
+                    pivotRow = r;
+                }
+            }
+            double[] tmp = aug[col];
+            aug[col] = aug[pivotRow];
+            aug[pivotRow] = tmp;
+            if (Math.abs(aug[col][col]) < 1e-12) {
+                continue;
+            }
+            for (int r = col + 1; r < p; r++) {
+                double factor = aug[r][col] / aug[col][col];
+                for (int c = col; c <= p; c++) {
+                    aug[r][c] -= factor * aug[col][c];
+                }
+            }
+        }
+        double[] beta = new double[p];
+        for (int i = p - 1; i >= 0; i--) {
+            if (Math.abs(aug[i][i]) < 1e-12) {
+                beta[i] = 0.0;
+                continue;
+            }
+            double sum = aug[i][p];
+            for (int j = i + 1; j < p; j++) {
+                sum -= aug[i][j] * beta[j];
+            }
+            beta[i] = sum / aug[i][i];
+        }
+        return beta;
+    }
 
     private double predict(double[] coef, double[] features) {
         double val = 0.0;
