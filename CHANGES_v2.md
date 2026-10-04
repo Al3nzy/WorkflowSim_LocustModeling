@@ -37,6 +37,10 @@ HEFT broke rank ties, and summed per-VM costs, in `HashMap` iteration order keye
 * `RunAllVariants` runs the whole benchmark as A (published), B (+ archive) and C (+ archive + online learning) with no `-D` options and prints/saves a table `variants_comparison.txt` of LIWSA-ML and LIWSA against NSGA-II, MLEAO, HEFT and Min-Min (all / small / large workflows). `SimulatedFrontEvaluation` accepts `ALL`, `SMALL`, `LARGE` and a final variant letter.
 * `generate_figures.py` now draws one panel per workflow family, with the 24-100-task instances and the 997/1000-task instances in separate figures (`*_small`, `*_large`, PDF and PNG), error bars over seeds, and a `*_hypervolume_relative_*` heat map (% of the best algorithm per workflow).
 
+## 3d. Final design is the default
+
+The external archive (LIWSA, LIWSA-ML) and online learning (LIWSA-ML) are on by default; `ResultsPaths.applyVariant("A")` or `-Dliwsa.outputArchive=false -Dliwsa.onlineLearning=false` restores the earlier behaviour exactly. `RunPaperExperiments` runs every experiment the paper needs in one command. The archive can also be switched on for NSGA-II (`-Dnsga2.outputArchive=true`) and MLEAO (`-Dmleao.outputArchive=true`); both are off by default.
+
 ## 4. New tools (`examples/org/workflowsim/examples/planning/`)
 
 | Tool | Purpose |

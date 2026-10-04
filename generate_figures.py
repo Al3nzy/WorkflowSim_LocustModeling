@@ -53,6 +53,11 @@ DEFAULT_CSV = os.path.join(OUTPUT_DIR, "benchmark_results_nsga2.csv")
 
 # (file, mode, argument) for --all
 KNOWN_FILES = [
+    ("paper_main.csv", None, None),
+    ("paper_density_ablation.csv", "pair", "LIWSA,LIWSA-NoDensity"),
+    ("paper_naive.csv", "pair", "LIWSA-ML,LIWSA-ML-Naive"),
+    ("paper_lambda.csv", "sweep", "LIWSA_L"),
+    ("paper_theta.csv", "sweep", "LIWSAML_T"),
     ("benchmark_results_nsga2.csv", None, None),
     ("benchmark_results.csv", None, None),
     ("benchmark_results_parallel.csv", None, None),

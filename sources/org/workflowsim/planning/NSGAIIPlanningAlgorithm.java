@@ -105,6 +105,11 @@ public class NSGAIIPlanningAlgorithm extends BasePlanningAlgorithm {
 
     /** Same semantics as LIWSAPlanningAlgorithm.CONFIG_SEED_ASSIGNMENTS. */
     public static List<Map<Integer, Integer>> CONFIG_SEED_ASSIGNMENTS = null;
+    /**
+     * Opt-in (default false). Same external Pareto archive that LIWSAPlanningAlgorithm offers, so that the
+     * comparison can be run with every algorithm collecting its non-dominated solutions the same way.
+     */
+    public static boolean CONFIG_OUTPUT_ARCHIVE = Boolean.getBoolean("nsga2.outputArchive");
 
     // ---- problem data, set once at the start of run() ----
     protected List<Task> taskOrder;
@@ -174,6 +179,9 @@ public class NSGAIIPlanningAlgorithm extends BasePlanningAlgorithm {
         int[] rank = new int[populationSize];
         double[] crowding = new double[populationSize];
         rankAndCrowd(makespans, costs, populationSize, rank, crowding);
+        if (CONFIG_OUTPUT_ARCHIVE) {
+            archiveUpdate();
+        }
 
         for (int gen = 0; gen < generationCount; gen++) {
 
@@ -258,6 +266,9 @@ public class NSGAIIPlanningAlgorithm extends BasePlanningAlgorithm {
             rank = new int[populationSize];
             crowding = new double[populationSize];
             rankAndCrowd(makespans, costs, populationSize, rank, crowding);
+            if (CONFIG_OUTPUT_ARCHIVE) {
+                archiveUpdate();
+            }
         }
 
         List<Integer> finalFront = new ArrayList<>();
@@ -278,16 +289,98 @@ public class NSGAIIPlanningAlgorithm extends BasePlanningAlgorithm {
             metrics.paretoFrontPoints.add(new double[]{makespans[i], costs[i]});
             metrics.paretoFrontAssignments.add(toAssignment(population.get(i)));
         }
+        int[] commitGenotype = population.get(chosen);
+        if (CONFIG_OUTPUT_ARCHIVE && !archP.isEmpty()) {
+            int best = 0;
+            for (int a = 1; a < archP.size(); a++) {
+                double[] pa = archP.get(a);
+                double[] pb = archP.get(best);
+                if (pa[0] < pb[0] || (pa[0] == pb[0] && pa[1] < pb[1])) {
+                    best = a;
+                }
+            }
+            metrics.chosenMakespan = archP.get(best)[0];
+            metrics.chosenCost = archP.get(best)[1];
+            metrics.paretoFrontSize = archP.size();
+            metrics.paretoFrontPoints = new ArrayList<>();
+            metrics.paretoFrontAssignments = new ArrayList<>();
+            for (int a = 0; a < archP.size(); a++) {
+                metrics.paretoFrontPoints.add(archP.get(a).clone());
+                metrics.paretoFrontAssignments.add(toAssignment(archG.get(a)));
+            }
+            commitGenotype = archG.get(best);
+        }
         metrics.searchWallClockMillis = System.currentTimeMillis() - searchStartMillis;
         metrics.populationSizeUsed = populationSize;
         metrics.generationCountUsed = generationCount;
         metrics.objectiveEvaluations = evaluationCount;
         lastRun = metrics;
 
-        commitAssignment(population.get(chosen));
+        commitAssignment(commitGenotype);
 
         Log.printLine("NSGA-II finished. Pareto front size: " + finalFront.size()
                 + ", chosen makespan=" + makespans[chosen] + ", cost=" + costs[chosen]);
+    }
+
+    // ---- optional external archive (same mechanism as LIWSAPlanningAlgorithm.CONFIG_OUTPUT_ARCHIVE) ----
+    private List<int[]> archG = new ArrayList<>();
+    private List<double[]> archP = new ArrayList<>();
+
+    private void archiveUpdate() {
+        for (int i = 0; i < populationSize; i++) {
+            archiveConsider(population.get(i), makespans[i], costs[i]);
+        }
+    }
+
+    private void archiveConsider(int[] genotype, double mk, double cost) {
+        for (double[] a : archP) {
+            if (a[0] <= mk && a[1] <= cost) {
+                return; // weakly dominated (includes an identical objective vector)
+            }
+        }
+        for (int a = archP.size() - 1; a >= 0; a--) {
+            double[] p = archP.get(a);
+            if (mk <= p[0] && cost <= p[1]) {
+                archP.remove(a);
+                archG.remove(a);
+            }
+        }
+        archG.add(genotype.clone());
+        archP.add(new double[]{mk, cost});
+        while (archP.size() > populationSize) {
+            archiveDropMostCrowded();
+        }
+    }
+
+    private void archiveDropMostCrowded() {
+        int sz = archP.size();
+        Integer[] order = new Integer[sz];
+        for (int i = 0; i < sz; i++) {
+            order[i] = i;
+        }
+        java.util.Arrays.sort(order, (x, y) -> Double.compare(archP.get(x)[0], archP.get(y)[0]));
+        double minM = archP.get(order[0])[0], maxM = archP.get(order[sz - 1])[0];
+        double minC = Double.POSITIVE_INFINITY, maxC = Double.NEGATIVE_INFINITY;
+        for (double[] p : archP) {
+            minC = Math.min(minC, p[1]);
+            maxC = Math.max(maxC, p[1]);
+        }
+        double rm = Math.max(maxM - minM, 1e-12), rc = Math.max(maxC - minC, 1e-12);
+        double worst = Double.POSITIVE_INFINITY;
+        int drop = -1;
+        for (int r = 1; r < sz - 1; r++) {
+            double[] lo = archP.get(order[r - 1]), hi = archP.get(order[r + 1]);
+            double crowd = (hi[0] - lo[0]) / rm + Math.abs(lo[1] - hi[1]) / rc;
+            if (crowd < worst) {
+                worst = crowd;
+                drop = order[r];
+            }
+        }
+        if (drop < 0) {
+            drop = order[sz - 1];
+        }
+        archP.remove(drop);
+        archG.remove(drop);
     }
 
     private int bestOf(List<Integer> indices) {

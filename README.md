@@ -22,38 +22,30 @@
 > LIWSA-ML at matched wall-clock time (`EqualTimeBenchmark`). Search-time figures
 > quoted below were measured with the earlier, slower implementation.
 
-## Quick start: run everything and see who is better
+## Quick start
 
-From the repository root (Java 11 or newer; on macOS/Linux replace `;` with `:` in `-cp`):
+The final algorithms are now the default: **LIWSA** uses the external Pareto archive, and **LIWSA-ML** uses the OLS
+warm start, keeps learning during the search, and uses the archive. HEFT, Min-Min, MLEAO and NSGA-II are unchanged.
+(`-Dliwsa.outputArchive=false -Dliwsa.onlineLearning=false` returns to the earlier LIWSA/LIWSA-ML.)
+
+From the repository root (Java 11 or newer; on macOS/Linux replace `;` with `:` in `-cp`; always keep the quotes):
 
 ```bash
-# 1. All three variants (A published, B + Pareto archive, C + archive + online learning) and the comparison table
+# 1. Everything the paper needs (main benchmark, density ablation, OLS-vs-naive, lambda and theta sweeps)
+java -cp "bin;lib/*" org.workflowsim.examples.planning.RunPaperExperiments
+#    quick test on two workflows:   ... RunPaperExperiments "Montage_25,Sipht_30"
+
+# 2. Only the main benchmark (writes Output&Results/benchmark_results_nsga2.csv and prints the summary)
+java -cp "bin;lib/*" org.workflowsim.examples.planning.LIWSABenchmarkExample
+
+# 3. Figures and summary (PDF + PNG in  Output&Results/figures/ )
+python generate_figures.py "Output&Results/paper_main.csv"
+python generate_figures.py --all
+
+# 4. Optional: compare the earlier published version (A), + archive (B) and the final version (C)
 java -cp "bin;lib/*" org.workflowsim.examples.planning.RunAllVariants
-#    faster, only the 15 workflows of 24-100 tasks:   ... RunAllVariants SMALL
-
-# 2. Figures and summary for a variant (written to  Output&Results/figures/ )
-python generate_figures.py "Output&Results/variant_A_published.csv"
-python generate_figures.py "Output&Results/variant_C_archive_online.csv"
-
-# 3. Re-score every front with simulator-measured values (the fairest evaluation); last letter = variant A, B or C
-java -cp "bin;lib/*" org.workflowsim.examples.planning.SimulatedFrontEvaluation SMALL 1,2,3,4,5 "Output&Results/simulated_A_small.csv" A
-java -cp "bin;lib/*" org.workflowsim.examples.planning.SimulatedFrontEvaluation SMALL 1,2,3,4,5 "Output&Results/simulated_C_small.csv" C
 ```
-`RunAllVariants` needs no command-line options: the variants are switched in code. (They correspond to the options
-`-Dliwsa.outputArchive=true` and `-Dliwsa.onlineLearning=true`, which are Java command-line options typed after `java`;
-they are not stored in any file. Use them only if you start the single-run programs yourself.)
-The comparison table is saved as `Output&Results/variants_comparison.txt`.
-
----
-
-> *Desert locusts don't follow a timer. They respond to crowding. So does LIWSA.*
-
-When individual locusts sense neighbours around them, they shift from solitary foraging to collective swarming — not because a clock told them to, but because of local density. **LIWSA** brings this exact mechanism into cloud workflow scheduling: each candidate schedule measures its own neighbourhood crowding at every generation and decides its own phase probability. No weight. No global clock. No scalar aggregation of makespan vs cost.
-
-The result: a **non-dominated front** approximating the Pareto front of scheduling options — not one solution, but a menu of makespan-vs-cost trade-offs — produced entirely inside WorkflowSim with zero external dependencies.
-
----
-
+Every run prints a summary of all algorithms at the end and saves it next to the CSV (`*_summary.txt`, `*_summary.csv`).
 ## 📁 Repository Structure
 
 ```

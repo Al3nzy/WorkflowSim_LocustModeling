@@ -102,14 +102,15 @@ public class LIWSAPlanningAlgorithm extends BasePlanningAlgorithm {
      */
     public static boolean CONFIG_DENSITY_ABLATION = false;
     /**
-     * Opt-in (default false, which reproduces the published behaviour exactly).
+     * Default true (part of the final LIWSA design); -Dliwsa.outputArchive=false or
+     * ResultsPaths.applyVariant("A") restores the earlier behaviour exactly.
      * When true, an external archive of every distinct non-dominated solution
      * visited during the search (truncated by crowding distance to the
      * population size) is kept and returned as the final front. The search
      * itself is unchanged: the same random stream drives the same population
      * trajectory; only the reported front and the committed schedule differ.
      */
-    public static boolean CONFIG_OUTPUT_ARCHIVE = Boolean.getBoolean("liwsa.outputArchive");
+    public static boolean CONFIG_OUTPUT_ARCHIVE = !"false".equalsIgnoreCase(System.getProperty("liwsa.outputArchive"));
 
     /**
      * Snapshot of the most recently completed run, published at the end of

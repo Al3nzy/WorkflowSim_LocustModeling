@@ -69,8 +69,8 @@ public class SimulatedFrontEvaluation {
         String out = args.length > 2 ? args[2] : ResultsPaths.resolve("simulated_front_eval.csv");
         int pop = 30, gens = 100;
         Log.disable();
-        // optional 4th argument: A = published algorithm, B = + output archive, C = + archive + online learning
-        ResultsPaths.applyVariant(args.length > 3 ? args[3] : "A");
+        // optional 4th argument (default C = final design): A = earlier published algorithm, B = + output archive, C = + archive + online learning
+        ResultsPaths.applyVariant(args.length > 3 ? args[3] : "C");
 
         PrintWriter pw = new PrintWriter(out);
         pw.println("workflow,algorithm,seed,replayed_members,sim_nondominated_points,"

@@ -100,13 +100,14 @@ public class LIWSAMLPlanningAlgorithm extends LIWSAPlanningAlgorithm {
     public static double CONFIG_PRED_TEMPERATURE = 0.5;
     public static boolean CONFIG_NAIVE_FEATURES = false;
     /**
-     * Opt-in (default false: published behaviour, bit-identical). When true the
+     * Default true (part of the final LIWSA-ML design); -Dliwsa.onlineLearning=false or
+     * ResultsPaths.applyVariant("A"/"B") switches it off. When true the
      * predictor keeps learning during the search: every schedule the search
      * evaluates is added to the OLS training data, the model is refitted from
      * all data seen so far every CONFIG_ONLINE_PERIOD generations, and
      * numPredictorSeeds fresh model-biased genotypes are injected as immigrants.
      */
-    public static boolean CONFIG_ONLINE_LEARNING = Boolean.getBoolean("liwsa.onlineLearning");
+    public static boolean CONFIG_ONLINE_LEARNING = !"false".equalsIgnoreCase(System.getProperty("liwsa.onlineLearning"));
     public static int CONFIG_ONLINE_PERIOD = Integer.getInteger("liwsa.onlinePeriod", 10);
 
     // ---- learned model coefficients ----

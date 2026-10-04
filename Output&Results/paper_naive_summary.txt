@@ -1,0 +1,27 @@
+====================================================================================================
+RESULTS SUMMARY  (Output&Results/paper_naive.csv)
+5 workflow(s), 4 algorithm(s), 60 runs; values are the mean over workflows and seeds.
+====================================================================================================
+algorithm           runs    makespan        cost  front_size hypervolume      util_%    fairness     speedup    search_s       sim_s  HVscore  wins  avgRank
+----------------------------------------------------------------------------------------------------
+HEFT                   5    8163.668       46306       1.000   818874624      51.138       0.706       5.095        0.00        0.16     61.8     0     3.00
+Min-Min                5       13961       48343       1.000   452712145      47.054       0.809       3.321        0.00        0.14     23.5     0     4.00
+LIWSA-ML              25    9411.161       46231      20.320  1198208728      46.893       0.682       4.766        0.13        0.27    100.0     5     1.00
+LIWSA-ML-Naive        25    9411.161       46231      20.320  1198208728      46.893       0.682       4.766        0.14        0.27    100.0     0     2.00
+HVscore = hypervolume as % of the best algorithm on each workflow, averaged over workflows.
+
+Mean hypervolume per workflow (best in each row marked *)
+workflow                  HEFT     Min-Min    LIWSA-ML LIWSA-ML-Na
+----------------------------------------------------------------------------------------------------
+Montage_100            14611.3      5138.4    19460.1*    19460.1*
+CyberShake_100        247872.9     92979.0  1492840.9*  1492840.9*
+Sipht_100            6408349.0   1415273.7  7382949.5*  7382949.5*
+Epigenomics_100    4082394256.4 2259642937.5 5973579518.4* 5973579518.4*
+Inspiral_100         5308029.6   2404396.1  8568869.3*  8568869.3*
+
+LIWSA-ML relative hypervolume difference per workflow (positive = LIWSA-ML higher)
+vs                     mean %   median % workflows won
+HEFT                  +131.68     +46.33        5 / 5
+Min-Min               +525.34    +278.72        5 / 5
+LIWSA-ML-Naive          +0.00      +0.00        0 / 5
+====================================================================================================

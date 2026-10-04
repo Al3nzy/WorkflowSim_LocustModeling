@@ -58,10 +58,10 @@ public final class ResultsPaths {
 
     /**
      * Switches the optional LIWSA features in code, so no -D command-line option is needed.
-     * A = published algorithm; B = + external Pareto archive; C = + archive + online learning.
+     * A = earlier published algorithm; B = + external Pareto archive; C = + archive + online learning (the final design, also the default).
      */
     public static void applyVariant(String variant) {
-        String v = variant == null ? "A" : variant.trim().toUpperCase();
+        String v = variant == null ? "C" : variant.trim().toUpperCase();
         org.workflowsim.planning.LIWSAPlanningAlgorithm.CONFIG_OUTPUT_ARCHIVE = v.equals("B") || v.equals("C");
         org.workflowsim.planning.LIWSAMLPlanningAlgorithm.CONFIG_ONLINE_LEARNING = v.equals("C");
     }
