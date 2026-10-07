@@ -41,6 +41,12 @@ HEFT broke rank ties, and summed per-VM costs, in `HashMap` iteration order keye
 
 The external archive (LIWSA, LIWSA-ML) and online learning (LIWSA-ML) are on by default; `ResultsPaths.applyVariant("A")` or `-Dliwsa.outputArchive=false -Dliwsa.onlineLearning=false` restores the earlier behaviour exactly. `RunPaperExperiments` runs every experiment the paper needs in one command. The archive can also be switched on for NSGA-II (`-Dnsga2.outputArchive=true`) and MLEAO (`-Dmleao.outputArchive=true`); both are off by default.
 
+## 3e. Fix: the OLS-vs-naive ablation now really removes the learning
+
+`LIWSAMLPlanningAlgorithm.CONFIG_NAIVE_FEATURES` was declared but never read, so `LIWSA-ML-Naive` was an exact copy of `LIWSA-ML` in earlier versions and the earlier "OLS vs naive" differences were run-to-run noise. The flag now sets fixed scoring (predicted duration for makespan, predicted cost for cost), skips the 400 training decodes and never refits; everything else (weights, softmax sampling, immigrants, archive) is unchanged. Results: `Output&Results/paper_naive.csv`.
+
+`PricingSensitivityCheck` reruns HEFT, NSGA-II and LIWSA-ML under three VM price lists (`paper_pricing.csv`). `make_paper_figures.py` redraws the six result figures of the paper from `paper_main.csv`. `RunPaperExperiments` now also runs the pricing check.
+
 ## 4. New tools (`examples/org/workflowsim/examples/planning/`)
 
 | Tool | Purpose |

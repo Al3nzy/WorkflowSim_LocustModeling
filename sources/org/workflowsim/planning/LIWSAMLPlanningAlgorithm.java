@@ -98,6 +98,7 @@ public class LIWSAMLPlanningAlgorithm extends LIWSAPlanningAlgorithm {
     public static int CONFIG_NUM_TRAINING_SAMPLES = 400;
     public static int CONFIG_NUM_PREDICTOR_SEEDS = 4;
     public static double CONFIG_PRED_TEMPERATURE = 0.5;
+    /** Ablation switch: true replaces the OLS model by fixed duration/cost scoring (see trainPredictor). */
     public static boolean CONFIG_NAIVE_FEATURES = false;
     /**
      * Default true (part of the final LIWSA-ML design); -Dliwsa.onlineLearning=false or
@@ -253,6 +254,16 @@ public class LIWSAMLPlanningAlgorithm extends LIWSAPlanningAlgorithm {
     // ---------------------------------------------------------------
 
     private void trainPredictor() {
+        if (CONFIG_NAIVE_FEATURES) {
+            // Ablation: no learning. Score (task, VM) pairs with only the raw normalised predicted duration
+            // (feature 6) for makespan and predicted cost (feature 7) for cost. No training decodes are spent
+            // and the model is never refitted during the search; everything else is unchanged.
+            coefMakespan = new double[N_FEATURES];
+            coefCost = new double[N_FEATURES];
+            coefMakespan[6] = 1.0;
+            coefCost[7] = 1.0;
+            return;
+        }
         int n = taskOrder.size();
         int m = vmList.size();
         int rows = numTrainingSamples * n;
@@ -419,7 +430,7 @@ public class LIWSAMLPlanningAlgorithm extends LIWSAPlanningAlgorithm {
 
     @Override
     protected void observeGeneration(int gen) {
-        if (!CONFIG_ONLINE_LEARNING) {
+        if (!CONFIG_ONLINE_LEARNING || CONFIG_NAIVE_FEATURES) {
             return;
         }
         for (int i = 0; i < populationSize; i++) {
@@ -431,6 +442,9 @@ public class LIWSAMLPlanningAlgorithm extends LIWSAPlanningAlgorithm {
     protected List<int[]> proposeImmigrants(int gen) {
         if (!CONFIG_ONLINE_LEARNING) {
             return new ArrayList<>();
+        }
+        if (CONFIG_NAIVE_FEATURES) {
+            return buildBiasedGenotypes();   // fixed duration/cost scores, no refit
         }
         int p = N_FEATURES;
         double[][] xtx = new double[p][p];

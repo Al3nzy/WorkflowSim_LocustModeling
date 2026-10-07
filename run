@@ -1,0 +1,42 @@
+#!/bin/bash
+# Code Ocean entry point: runs every experiment of the paper, draws the figures, and copies
+# everything to Code Ocean's results tab (/results).
+#
+#   Java : RunPaperExperiments  -> main benchmark, density ablation, OLS-vs-naive, lambda and theta
+#                                  sweeps, VM-pricing sensitivity (CSV files + summaries)
+#   Python: make_paper_figures.py -> the six result figures used in the paper
+#           generate_figures.py   -> additional figures and the all-algorithm summary tables
+#
+# Set QUICK=1 (environment variable) for a two-workflow smoke test of the whole chain (about a minute).
+set -ex
+cd "$(dirname "$0")"
+
+OUT="Output&Results"          # the folder name contains an ampersand: always keep it quoted
+RESULTS="../results"          # Code Ocean's persistent results folder (= /results when this file is /code/run)
+mkdir -p "$OUT" "$RESULTS" bin
+
+# 1. Compile every Java source file
+find sources examples -name "*.java" > sources.txt
+javac -nowarn -encoding UTF-8 -cp "lib/*" -d bin @sources.txt
+
+# 2. Run all experiments of the paper (writes Output&Results/paper_*.csv and *_summary.txt)
+if [ "${QUICK:-0}" = "1" ]; then
+    java -cp "bin:lib/*" org.workflowsim.examples.planning.RunPaperExperiments "Montage_25,Sipht_30"
+else
+    java -cp "bin:lib/*" org.workflowsim.examples.planning.RunPaperExperiments
+fi
+
+# 3. FIRST COPY: put the CSV files and summaries into the results tab right away,
+#    so they are kept even if a later (plotting) step fails
+cp -r "$OUT"/paper_* "$RESULTS"/
+
+# 4. Python: the paper's result figures, then the additional figures and summary tables.
+#    A failing plotting step must not lose the results already copied, so these two lines do not abort the run.
+python3 make_paper_figures.py "$OUT/paper_main.csv" --outdir "$OUT/paper_figures" || echo "WARNING: make_paper_figures.py failed"
+python3 generate_figures.py --all --outdir "$OUT/figures" || echo "WARNING: generate_figures.py failed"
+
+# 5. SECOND COPY: figures (PDF and PNG) and the Python summary files
+[ -d "$OUT/paper_figures" ] && cp -r "$OUT/paper_figures" "$RESULTS"/
+[ -d "$OUT/figures" ]       && cp -r "$OUT/figures" "$RESULTS"/
+cp "$OUT"/paper_*_summary_py.txt "$RESULTS"/ 2>/dev/null || true
+echo "Done. Results copied to $RESULTS"

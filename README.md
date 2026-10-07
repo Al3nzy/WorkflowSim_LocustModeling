@@ -31,7 +31,7 @@ warm start, keeps learning during the search, and uses the archive. HEFT, Min-Mi
 From the repository root (Java 11 or newer; on macOS/Linux replace `;` with `:` in `-cp`; always keep the quotes):
 
 ```bash
-# 1. Everything the paper needs (main benchmark, density ablation, OLS-vs-naive, lambda and theta sweeps)
+# 1. Everything the paper needs (main benchmark, density ablation, OLS-vs-naive, lambda and theta sweeps, pricing sensitivity)
 java -cp "bin;lib/*" org.workflowsim.examples.planning.RunPaperExperiments
 #    quick test on two workflows:   ... RunPaperExperiments "Montage_25,Sipht_30"
 
@@ -41,8 +41,9 @@ java -cp "bin;lib/*" org.workflowsim.examples.planning.LIWSABenchmarkExample
 # 3. Figures and summary (PDF + PNG in  Output&Results/figures/ )
 python generate_figures.py "Output&Results/paper_main.csv"
 python generate_figures.py --all
+python make_paper_figures.py                 # the six result figures of the paper, written to figs/
 
-# 4. Optional: compare the earlier published version (A), + archive (B) and the final version (C)
+# 4. Optional: compare version (A), + archive (B) and the final version (C)
 java -cp "bin;lib/*" org.workflowsim.examples.planning.RunAllVariants
 ```
 Every run prints a summary of all algorithms at the end and saves it next to the CSV (`*_summary.txt`, `*_summary.csv`).

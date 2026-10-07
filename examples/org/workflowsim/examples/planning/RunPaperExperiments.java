@@ -24,6 +24,7 @@ package org.workflowsim.examples.planning;
  *   3. OLS vs naive features (5 workflows)     -> paper_naive.csv
  *   4. phase-mixing weight sweep (5 workflows) -> paper_lambda.csv
  *   5. softmax-temperature sweep (5 workflows) -> paper_theta.csv
+ *   6. VM pricing sensitivity (3 workflows)    -> paper_pricing.csv
  *
  * Usage (from the repository root; ':' instead of ';' on macOS/Linux):
  *   java -cp "bin;lib/*" org.workflowsim.examples.planning.RunPaperExperiments
@@ -64,7 +65,13 @@ public class RunPaperExperiments {
             }
             ResultsPaths.applyVariant("C");           // in case a step changed a switch
         }
+        String pricing = ResultsPaths.resolve("paper_pricing.csv");
         System.out.println();
-        System.out.println("ALL STEPS DONE. Please zip the folder \"" + ResultsPaths.OUTPUT_DIR + "\" and send it.");
+        System.out.println("#".repeat(78));
+        System.out.println("# STEP: paper_pricing.csv");
+        System.out.println("#".repeat(78));
+        PricingSensitivityCheck.main(new String[]{"Montage_50,CyberShake_50,Sipht_30", "1,2,3,4,5", pricing});
+        System.out.println();
+        System.out.println("ALL STEPS DONE.");
     }
 }
