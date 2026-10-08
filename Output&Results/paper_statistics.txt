@@ -1,0 +1,55 @@
+== Aggregate (hypervolume, one planning-level evaluator for all six algorithms) ==
+HEFT      score  71.0  best  0  rank 5.08  front   1.0  search time nan s
+Min-Min   score  35.2  best  0  rank 5.90  front   1.0  search time nan s
+MLEAO     score  83.8  best  0  rank 4.03  front   6.1  search time 0.100 s
+LIWSA     score  91.9  best  0  rank 2.65  front  15.8  search time 0.160 s
+LIWSA-ML  score  99.7  best 14  rank 1.45  front  16.5  search time 0.283 s
+NSGA-II   score  93.3  best  6  rank 1.90  front  26.9  search time 0.098 s
+
+== LIWSA-ML relative to each algorithm (per-instance mean hypervolume) ==
+HEFT     mean +104.51% median  +35.92% IQR [+24.3, +45.3] higher 20/20  r=1.00  p=1.907e-06  p_Holm=9.537e-06
+Min-Min  mean +265.07% median +260.03% IQR [+104.4, +390.8] higher 20/20  r=1.00  p=1.907e-06  p_Holm=9.537e-06
+MLEAO    mean  +21.42% median  +16.12% IQR [+5.6, +30.8] higher 20/20  r=1.00  p=1.907e-06  p_Holm=9.537e-06
+LIWSA    mean  +10.11% median   +3.28% IQR [+0.2, +12.1] higher 17/20  r=0.81  p=0.0007076  p_Holm=0.001415
+NSGA-II  mean   +8.10% median   +0.47% IQR [-0.0, +11.3] higher 14/20  r=0.57  p=0.02395  p_Holm=0.02395
+
+== Scale split: LIWSA-ML vs NSGA-II ==
+small (15): mean +1.27% higher 9  p=0.421
+large (5): mean +28.59% range [19.9, 35.4] higher 5
+search time LIWSA-ML / NSGA-II: overall 2.89x
+seed-level: LIWSA-ML higher in 68 of 100 paired runs
+
+== Component analysis: hypervolume relative to NSGA-II within each variant run (%) ==
+LIWSA                        mean  -4.6 median  -4.2 higher  2  24-100 tasks  -4.8  ~1000 tasks  -4.1
+LIWSA + archive              mean  -1.6 median  -1.4 higher  4  24-100 tasks  -1.3  ~1000 tasks  -2.7
+LIWSA-ML                     mean  -1.1 median  -2.0 higher  6  24-100 tasks  -2.5  ~1000 tasks  +2.9
+LIWSA-ML + archive           mean  +6.5 median  +0.1 higher 12  24-100 tasks  +0.4  ~1000 tasks +24.8
+LIWSA-ML + archive + online  mean  +8.1 median  +0.5 higher 14  24-100 tasks  +1.3  ~1000 tasks +28.6
+archive on LIWSA-ML: +7.63 points, improved 19/20, p=0.0001318
+online learning: +1.60 points, improved 18/20, p=0.0003948
+archive on LIWSA: +3.03 points, improved 18/20, p=0.0001964
+final design vs published LIWSA-ML, relative to NSGA-II, development subset: +5.03 points, improved 5/5
+final design vs published LIWSA-ML, relative to NSGA-II, check subset: +3.12 points, improved 9/10
+
+== Density ablation (LIWSA vs LIWSA-NoDensity) ==
+mean -0.066% higher with density 8/20  p=0.729
+
+== OLS vs naive features ==
+mean +4.69% median +4.44% higher 4/5; seed runs 21/25
+{'Montage_100': 12.09, 'CyberShake_100': 10.03, 'Sipht_100': 0.17, 'Epigenomics_100': 4.44, 'Inspiral_100': -3.29}
+
+== lambda sweep ==
+spread across values: mean 2.02% max 4.02%; largest |mean change vs default| 0.76%; largest single-workflow change 3.09%
+
+== theta sweep ==
+spread across values: mean 1.20% max 3.08%; largest |mean change vs default| 0.69%; largest single-workflow change 3.14%
+
+== Matched wall-clock comparison (LIWSA-ML at 100 generations vs NSGA-II) ==
+NSGA-II generations (matched): mean 237; total NSGA-II search time / LIWSA-ML search time = 1.000
+NSGA-II_100gen       all: mean +7.91% median +0.46% higher 13/20 p=0.0362
+                     24-100 tasks: mean +1.01% higher 8/15 p=0.561
+                     ~1000 tasks: mean +28.59% range [19.9, 35.4] higher 5/5
+NSGA-II_matchedTime  all: mean +5.05% median -0.00% higher 9/20 p=0.388
+                     24-100 tasks: mean -1.41% higher 4/15 p=0.277
+                     ~1000 tasks: mean +24.41% range [18.8, 29.1] higher 5/5
+NSGA-II gain from the extra generations: mean +2.76%

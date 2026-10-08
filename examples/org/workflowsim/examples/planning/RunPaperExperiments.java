@@ -20,11 +20,15 @@ package org.workflowsim.examples.planning;
  * (LIWSA with the external archive; LIWSA-ML with OLS warm start, online learning and archive).
  *
  *   1. main benchmark, all workflows          -> paper_main.csv
+ *   1b. component variants A and B             -> paper_variant_A.csv, paper_variant_B.csv
  *   2. density ablation, all workflows         -> paper_density_ablation.csv
  *   3. OLS vs naive features (5 workflows)     -> paper_naive.csv
  *   4. phase-mixing weight sweep (5 workflows) -> paper_lambda.csv
  *   5. softmax-temperature sweep (5 workflows) -> paper_theta.csv
  *   6. VM pricing sensitivity (3 workflows)    -> paper_pricing.csv
+ *   7. matched wall-clock NSGA-II comparison   -> paper_equal_time.csv
+ *
+ * Hypervolume uses one planning-level evaluator for all six algorithms (HEFT and Min-Min included).
  *
  * Usage (from the repository root; ':' instead of ';' on macOS/Linux):
  *   java -cp "bin;lib/*" org.workflowsim.examples.planning.RunPaperExperiments
@@ -41,12 +45,16 @@ public class RunPaperExperiments {
         ResultsPaths.ensureDir();
         ResultsPaths.applyVariant("C");               // the final design
 
+        // {kind, workflows, csv, mode, variant}; variants A and B are the component-analysis runs
+        // (A = published algorithms, B = + external archive); the final design C is paper_main.csv.
         String[][] steps = {
-            {"benchmark", which, "paper_main.csv", ""},
-            {"benchmark", which, "paper_density_ablation.csv", "ablation"},
-            {"sens", five, "paper_naive.csv", "naive"},
-            {"sens", five, "paper_lambda.csv", "lambda"},
-            {"sens", five, "paper_theta.csv", "theta"}};
+            {"benchmark", which, "paper_main.csv", "", "C"},
+            {"benchmark", which, "paper_variant_A.csv", "", "A"},
+            {"benchmark", which, "paper_variant_B.csv", "", "B"},
+            {"benchmark", which, "paper_density_ablation.csv", "ablation", "C"},
+            {"sens", five, "paper_naive.csv", "naive", "C"},
+            {"sens", five, "paper_lambda.csv", "lambda", "C"},
+            {"sens", five, "paper_theta.csv", "theta", "C"}};
         for (String[] st : steps) {
             String csv = ResultsPaths.resolve(st[2]);
             new java.io.File(csv).delete();           // these runs append, so start from an empty file
@@ -54,6 +62,7 @@ public class RunPaperExperiments {
             System.out.println("#".repeat(78));
             System.out.println("# STEP: " + st[2]);
             System.out.println("#".repeat(78));
+            ResultsPaths.applyVariant(st[4]);
             if (st[0].equals("benchmark")) {
                 if (st[3].isEmpty()) {
                     LIWSABenchmarkExample.main(new String[]{st[1], csv});
@@ -71,7 +80,15 @@ public class RunPaperExperiments {
         System.out.println("# STEP: paper_pricing.csv");
         System.out.println("#".repeat(78));
         PricingSensitivityCheck.main(new String[]{"Montage_50,CyberShake_50,Sipht_30", "1,2,3,4,5", pricing});
+        // matched wall-clock comparison of LIWSA-ML with NSGA-II (timing based: run on an otherwise idle machine)
+        ResultsPaths.applyVariant("C");
+        String eq = ResultsPaths.resolve("paper_equal_time.csv");
         System.out.println();
-        System.out.println("ALL STEPS DONE.");
+        System.out.println("#".repeat(78));
+        System.out.println("# STEP: paper_equal_time.csv");
+        System.out.println("#".repeat(78));
+        EqualTimeBenchmark.main(new String[]{which, "1,2,3,4,5", eq});
+        System.out.println();
+        System.out.println("ALL STEPS DONE. Please zip the folder \"" + ResultsPaths.OUTPUT_DIR + "\" and send it.");
     }
 }

@@ -195,11 +195,13 @@ public class LIWSABenchmarkExample {
         // Cold-start variant for the initialisation ablation: run with -Dliwsa.coldStart=true
         boolean useWarmStartSeeding = !Boolean.getBoolean("liwsa.coldStart");
 
-        // Optional, off by default (so the published numbers are reproduced exactly):
-        // -Dliwsa.planningLevelBaselines=true scores HEFT and Min-Min for the
-        // hypervolume with the SAME planning-level decoder that evaluates every
-        // population member, instead of with their simulator-measured point.
-        boolean planningLevelBaselines = Boolean.getBoolean("liwsa.planningLevelBaselines");
+        // On by default: HEFT and Min-Min are scored for the hypervolume with the SAME
+        // planning-level decoder that evaluates every population member, so that all six
+        // algorithms are compared under one evaluator. Their simulator-measured makespan
+        // and cost are still reported in the CSV. -Dliwsa.planningLevelBaselines=false
+        // restores the earlier convention (simulator-measured HEFT/Min-Min point).
+        boolean planningLevelBaselines = !"false".equalsIgnoreCase(
+            System.getProperty("liwsa.planningLevelBaselines"));
 
         String csvOutputPath = ResultsPaths.resolve("benchmark_results_nsga2.csv");
 
@@ -337,7 +339,7 @@ public class LIWSABenchmarkExample {
             }
             }
 
-            if (planningLevelBaselines && useWarmStartSeeding && !ablationMode
+            if (planningLevelBaselines && useWarmStartSeeding
                     && LIWSAPlanningAlgorithm.lastRun != null
                     && LIWSAPlanningAlgorithm.lastRun.seedPlanningPoints != null
                     && warmStartSeeds.size() == 2

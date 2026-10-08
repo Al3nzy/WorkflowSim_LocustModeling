@@ -179,6 +179,19 @@ public class SensitivityAblationExample {
             for (List<LIWSABenchmarkExample.RunResult> runs : variantRuns) {
                 allResults.addAll(runs);
             }
+            // HEFT and Min-Min enter the hypervolume with the planning-level (decoder) point of
+            // their schedules, the same evaluator that scores every population member.
+            if (!"false".equalsIgnoreCase(System.getProperty("liwsa.planningLevelBaselines"))
+                    && heft != null && minmin != null
+                    && LIWSAPlanningAlgorithm.lastRun != null
+                    && LIWSAPlanningAlgorithm.lastRun.seedPlanningPoints != null
+                    && LIWSAPlanningAlgorithm.lastRun.seedPlanningPoints.size() >= 2) {
+                List<double[]> sp = LIWSAPlanningAlgorithm.lastRun.seedPlanningPoints;
+                heft.frontPoints = new ArrayList<>();
+                heft.frontPoints.add(sp.get(0).clone());
+                minmin.frontPoints = new ArrayList<>();
+                minmin.frontPoints.add(sp.get(1).clone());
+            }
             List<List<double[]>> allFronts = new ArrayList<>();
             for (LIWSABenchmarkExample.RunResult r : allResults) { allFronts.add(r.frontPoints); }
             double[] ref = ParetoMetrics.sharedReferencePoint(allFronts);

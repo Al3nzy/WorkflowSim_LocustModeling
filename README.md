@@ -31,19 +31,22 @@ warm start, keeps learning during the search, and uses the archive. HEFT, Min-Mi
 From the repository root (Java 11 or newer; on macOS/Linux replace `;` with `:` in `-cp`; always keep the quotes):
 
 ```bash
-# 1. Everything the paper needs (main benchmark, density ablation, OLS-vs-naive, lambda and theta sweeps, pricing sensitivity)
+# 1. Everything the paper needs (main benchmark, component variants, density ablation, OLS-vs-naive, lambda and theta sweeps,
+#    pricing sensitivity, matched wall-clock comparison). On Code Ocean the `run` script does steps 1 and 3 and paper_statistics.py
 java -cp "bin;lib/*" org.workflowsim.examples.planning.RunPaperExperiments
 #    quick test on two workflows:   ... RunPaperExperiments "Montage_25,Sipht_30"
 
-# 2. Only the main benchmark (writes Output&Results/benchmark_results_nsga2.csv and prints the summary)
+# 2. Only the main benchmark (writes Output&Results/benchmark_results_nsga2.csv and prints the summary; HEFT/Min-Min hypervolume uses the common planning-level evaluator)
 java -cp "bin;lib/*" org.workflowsim.examples.planning.LIWSABenchmarkExample
 
-# 3. Figures and summary (PDF + PNG in  Output&Results/figures/ )
+# 3. Statistics quoted in the paper, then figures and summaries (PDF + PNG in  Output&Results/figures/ )
+python paper_statistics.py
+python make_paper_figures.py "Output&Results/paper_main.csv" --outdir "Output&Results/paper_figures"
 python generate_figures.py "Output&Results/paper_main.csv"
 python generate_figures.py --all
 python make_paper_figures.py                 # the six result figures of the paper, written to figs/
 
-# 4. Optional: compare version (A), + archive (B) and the final version (C)
+# 4. Optional: compare the earlier published version (A), + archive (B) and the final version (C)
 java -cp "bin;lib/*" org.workflowsim.examples.planning.RunAllVariants
 ```
 Every run prints a summary of all algorithms at the end and saves it next to the CSV (`*_summary.txt`, `*_summary.csv`).
@@ -120,45 +123,39 @@ A standard, faithful implementation (Deb et al., 2002): fast non-dominated sorti
 
 ## 📊 Key Results (20 Pegasus Benchmark Instances, 5 Families, 5 Seeds Each)
 
-| Algorithm | Mean Hypervolume vs HEFT | Pareto Front Size | Search Wall-Clock (1000-task, relative to MLEAO) |
-|-----------|-------------------------:|:------------------:|:----------------------------------------:|
-| HEFT | baseline | 1 | — (no search phase) |
-| Min-Min | −3.4% avg | 1 | — (no search phase) |
-| MLEAO | +159.7% avg | 1–26 (mean 6.25) | 1.0× |
-| LIWSA | +174.2% avg | 1–30 (mean 13.75) | 9.1× |
-| **NSGA-II** | **+181.9% avg** | **1–30 (mean 26.84)** | **0.8×** |
-| **LIWSA-ML** | **+182.9% avg** | **1–30 (mean 13.25)** | **13.2×** |
+All six algorithms are scored by **one planning-level evaluator**: the hypervolume of every algorithm, HEFT and Min-Min included, is computed from decoder objective values (set `-Dliwsa.planningLevelBaselines=false` to restore the earlier simulator-measured HEFT/Min-Min point). Simulator-measured makespan and cost of the committed schedules are reported alongside. `python3 paper_statistics.py` recomputes every number below from the CSV files.
 
-LIWSA-ML beats HEFT, Min-Min, and MLEAO clearly and consistently (mean hypervolume gain +9.1% over MLEAO). Against a standard NSGA-II baseline at matched search budget, encoding, decoder, and warm-start seeds, the picture is closer: NSGA-II wins mean hypervolume on 14/20 instances to LIWSA-ML's 5 (margins narrow, ~1.4% on average, not significant at n=5), while running 1.4×–13.5× faster depending on workflow size — traced to the O(P²n) cost of LIWSA's density-driven solitary-phase voting vs. NSGA-II's O(P²+Pn) operators.
+| Algorithm | HV score (% of best) | Highest HV on | Mean rank | Mean front size | Search time per run |
+|-----------|---------------------:|:-------------:|:---------:|:---------------:|:-------------------:|
+| HEFT | 71.0 | 0 | 5.08 | 1.0 | no search |
+| Min-Min | 35.2 | 0 | 5.90 | 1.0 | no search |
+| MLEAO | 83.8 | 0 | 4.03 | 6.1 | 0.13 s |
+| LIWSA | 91.9 | 0 | 2.65 | 15.8 | 0.18 s |
+| NSGA-II | 93.3 | 6 | 1.90 | 26.9 | 0.13 s |
+| **LIWSA-ML** | **99.7** | **14** | **1.45** | 16.5 | 0.29 s |
 
-On **data-intensive workflows** (Epigenomics, Inspiral at ~1000 tasks), LIWSA-ML simultaneously reduces makespan and cost versus HEFT (e.g. Epigenomics_997: −78.5% makespan, −10.0% cost) — the schedule Pareto-dominates HEFT's on both objectives, not a trade-off, and a pattern all four population-based algorithms (MLEAO, LIWSA, NSGA-II, LIWSA-ML) share to some degree since it stems from a structural HEFT weakness on large file transfers, not from any one algorithm's search strategy specifically.
+LIWSA-ML exceeds HEFT, Min-Min, and MLEAO in mean hypervolume by 104.5%, 265.1%, and 21.4% (higher on all 20 workflows), LIWSA by 10.1% (17 of 20), and NSGA-II by 8.1% (14 of 20, Wilcoxon p = 0.024, Holm-adjusted). The difference depends on scale: on the five workflows of about 1000 tasks LIWSA-ML is higher on every one (+28.6% on average), and on the 15 workflows of 24 to 100 tasks the two are within 1.3% (higher on 9 of 15, p = 0.42). LIWSA-ML needs about 2.3x NSGA-II's search time (timing measured on a single-core container; hardware dependent).
+
+**Matched wall-clock time.** With NSGA-II given as many generations as fit into LIWSA-ML's search time (347 on average, total time 100.5% of LIWSA-ML's), NSGA-II is 2.2% ahead on the 15 smaller workflows (LIWSA-ML higher on 3 of 15) and LIWSA-ML is 22.1% ahead on the five largest (higher on all five). Over all 20 workflows the difference is not significant (+3.8%, p = 0.81). Reproduce with `EqualTimeBenchmark` (part of `RunPaperExperiments`).
+
+**Component analysis** (hypervolume relative to NSGA-II): the external archive adds 7.6 percentage points to LIWSA-ML (19 of 20 workflows improved) and online learning a further 1.6 (18 of 20). The archive and online learning were developed on the 15 workflows of 24-100 tasks (online learning on the five where the earlier LIWSA-ML trailed NSGA-II most, ten others as a check); no workflow of about 1000 tasks was used in development. See the manuscript's Algorithm Parameters section and Supplementary S14.
+
+On **data-intensive workflows** (Epigenomics, Inspiral at about 1000 tasks), LIWSA-ML reduces makespan and cost relative to HEFT at once (Epigenomics_997: -80.0% makespan, -9.8% cost), a pattern that stems from a structural HEFT weakness on large file transfers and is shared to some degree by all population-based algorithms.
 
 <p align="center">
-  <img src="Output%26Results/figures/hypervolume.png" alt="Hypervolume by workflow and algorithm" width="800"><br>
-  <sub><b>Fig. 1</b> — Mean hypervolume per workflow and algorithm (log-scaled, since values span orders of magnitude from 25-task to 1000-task instances). All four population-based algorithms (MLEAO, LIWSA, NSGA-II, LIWSA-ML) clear HEFT and Min-Min by a wide margin at every scale.</sub>
+  <img src="Output%26Results/paper_figures/hypervolume_families.png" alt="Hypervolume by workflow family" width="800"><br>
+  <sub><b>Fig. 1</b> - Hypervolume as a percentage of the best algorithm on each workflow, by family and scale (the paper's Fig. 2).</sub>
 </p>
 
 ### Ablations and Sensitivity Analysis
 
 | Experiment | Finding |
 |---|---|
-| **Density ablation** (`LIWSA` vs `LIWSA-NoDensity`, density fixed at 0.5) | No consistent advantage from *measuring* density: LIWSA wins 8/20 instances, mean −0.7% (NoDensity marginally ahead on average). The richer fronts vs. MLEAO come from having probabilistic phase mixing at all, not from that mixing being adaptive. |
-| **λ sensitivity** (phase-mixing weight, swept 0.1–0.9) | Low sensitivity overall (mean range 2.2% of each workflow's own hypervolume) — robust, not fragile. Default λ=0.5 is not the best value tested, though: it ranks 4th–5th of 5 on 4/5 representative workflows. |
-| **θ sensitivity** (softmax temperature, swept 0.1–0.9) | Low sensitivity overall (mean range 3.0%). Default θ=0.5 ranks 3rd of 5 on 4/5 workflows, a reasonable middle choice. Epigenomics shows zero variation (score gaps saturate the softmax regardless of temperature in this range). |
-| **OLS vs naive features** (`LIWSA-ML` vs `LIWSA-ML-Naive`, raw duration/cost only, no learned weights) | No measurable advantage from the learned model: OLS wins 3/5 representative instances, mean −0.64% (naive marginally ahead), all p ≥ 0.19. |
-
-Read together with the NSGA-II comparison: LIWSA-ML's aggregate advantage over HEFT/Min-Min/MLEAO is real and reproducible, but in controlled, like-for-like tests neither of the two specific refinements (adaptive density weighting, learned feature combination) is individually responsible for it. What both retain is architectural — a self-calibrating mechanism needing no manual per-workflow retuning — not a demonstrated performance edge over the simplest reasonable alternative.
-
-<p align="center">
-  <img src="Output%26Results/figures/density_ablation.png" alt="Density ablation" width="46%">
-  <img src="Output%26Results/figures/ols_vs_naive.png" alt="OLS vs naive features" width="46%"><br>
-  <sub><b>Fig. 2</b> — Left: LIWSA vs. LIWSA-NoDensity (density fixed at 0.5). Right: LIWSA-ML's learned OLS predictor vs. a naive duration/cost-only heuristic. Neither ablation shows a consistent edge for the more sophisticated mechanism.</sub>
-</p>
-
-<p align="center">
-  <img src="Output%26Results/figures/lambda_sensitivity.png" alt="Lambda sensitivity sweep" width="600"><br>
-  <sub><b>Fig. 3</b> — Phase-mixing weight λ swept from 0.1 to 0.9 on one representative instance per workflow family. Each curve is normalised to that workflow's own mean hypervolume: all five stay within roughly ±2% of their mean, showing the algorithm is not fragile to this parameter's exact value.</sub>
-</p>
+| **Density ablation** (`LIWSA` vs `LIWSA-NoDensity`, density fixed at 0.5) | Measured density adds no hypervolume (-0.07% mean, higher on 8 of 20 workflows, p = 0.73); its benefit is self-calibration of the phase mixing, with no mixing value to choose. |
+| **lambda sensitivity** (phase-mixing weight, 0.1-0.9) | Low sensitivity: hypervolume varies by 2.0% on average across values (at most 4.0%); no value changes the mean by more than 0.8% relative to the default. |
+| **theta sensitivity** (softmax temperature, 0.1-0.9) | Low sensitivity: 1.2% on average (at most 3.1%); no value changes the mean by more than 0.7%. |
+| **OLS vs naive features** (`LIWSA-ML` vs `LIWSA-ML-Naive`) | The learned predictor is higher on four of five workflows (+4.7% mean, 21 of 25 seed runs); Inspiral_100 favours the naive scoring (-3.3%). |
+| **VM pricing sensitivity** | LIWSA-ML / NSGA-II hypervolume ratio stays within 0.971-1.010 under three pricing schemes (HEFT scored by its simulator point in this table). |
 
 ---
 

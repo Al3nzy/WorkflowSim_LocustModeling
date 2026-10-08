@@ -27,8 +27,10 @@ STYLE = {
 }
 MARK = {'HEFT': '^', 'Min-Min': 's', 'MLEAO': 'D', 'LIWSA': 'o', 'NSGA-II': 'P', 'LIWSA-ML': '*'}
 FAMS = ['Montage', 'CyberShake', 'Sipht', 'Epigenomics', 'Inspiral']
-plt.rcParams.update({'font.size': 8, 'axes.titlesize': 9, 'axes.labelsize': 8, 'legend.fontsize': 8,
-                     'hatch.linewidth': 0.6})
+plt.rcParams.update({'font.size': 6.5, 'axes.titlesize': 7, 'axes.labelsize': 6.5, 'legend.fontsize': 6.5,
+                     'xtick.labelsize': 6, 'ytick.labelsize': 6, 'hatch.linewidth': 0.5})
+# Figure sizes are the printed sizes (7.2 in = IEEE two-column width, 3.5 in = one column), so the text is
+# about 6-7 pt in the paper and no rescaling is needed.
 
 
 def size(w):
@@ -59,24 +61,25 @@ def bars(ax, x, vals_by_alg, algos, width=None):
 
 def fig_hv(m, out):
     hv = m.groupby(['workflow', 'algorithm']).hypervolume.mean().unstack()
-    fig, axes = plt.subplots(1, 5, figsize=(13.4, 3.0))
+    hv = hv.div(hv.max(axis=1), axis=0) * 100          # percentage of the best algorithm on each workflow
+    fig, axes = plt.subplots(1, 5, figsize=(7.2, 1.95), sharey=True)
     for ax, f in zip(axes, FAMS):
         ws = wf_of(m, f, False) + wf_of(m, f, True)
         x = np.arange(len(ws))
         bars(ax, x, {a: hv.loc[ws, a].values for a in ALGOS}, ALGOS)
-        ax.set_yscale('log')
+        ax.set_ylim(0, 105)
         ax.set_xticks(x); ax.set_xticklabels([str(size(w)) for w in ws])
         ax.set_title(f); ax.set_xlabel('tasks')
         ax.grid(axis='y', lw=0.3, alpha=0.5)
-    axes[0].set_ylabel('Hypervolume')
-    legend(fig, ALGOS, y=-0.04); fig.tight_layout(rect=(0, 0.06, 1, 1))
+    axes[0].set_ylabel('Hypervolume (% of best)')
+    legend(fig, ALGOS, y=-0.04); fig.tight_layout(rect=(0, 0.07, 1, 1), w_pad=0.4)
     fig.savefig(out, bbox_inches='tight'); plt.close(fig)
 
 
 def fig_vs_heft(m, metric, ylabel, out):
     mean = m.groupby(['workflow', 'algorithm'])[metric].mean().unstack()
     algos = [a for a in ALGOS if a != 'HEFT']
-    fig, axes = plt.subplots(2, 5, figsize=(13.4, 4.4))
+    fig, axes = plt.subplots(2, 5, figsize=(7.2, 3.1))
     for j, f in enumerate(FAMS):
         for i, large in enumerate([False, True]):
             ax = axes[i][j]; ws = wf_of(m, f, large); x = np.arange(len(ws))
@@ -88,32 +91,32 @@ def fig_vs_heft(m, metric, ylabel, out):
                 ax.set_title(f)
             ax.set_xlabel('tasks'); ax.grid(axis='y', lw=0.3, alpha=0.5)
             if j == 0:
-                ax.set_ylabel(f"{ylabel}\n({'large scale' if large else '24-100 tasks'})")
-    legend(fig, algos, y=-0.03); fig.tight_layout(rect=(0, 0.05, 1, 1))
+                ax.set_ylabel(f"{ylabel}\n({'~1000 tasks' if large else '24-100 tasks'})")
+    legend(fig, algos, y=-0.03); fig.tight_layout(rect=(0, 0.05, 1, 1), w_pad=0.4, h_pad=0.6)
     fig.savefig(out, bbox_inches='tight'); plt.close(fig)
 
 
 def fig_scatter(m, out):
-    fig, axes = plt.subplots(1, 2, figsize=(9.5, 3.4))
-    for ax, w, t in [(axes[0], 'Epigenomics_997', 'Epigenomics_997 (data-intensive)'),
-                     (axes[1], 'CyberShake_100', 'CyberShake_100 (compute-bound)')]:
+    fig, axes = plt.subplots(1, 2, figsize=(3.5, 2.7))
+    for ax, w, t in [(axes[0], 'Epigenomics_997', 'Epigenomics_997'),
+                     (axes[1], 'CyberShake_100', 'CyberShake_100')]:
         d = m[m.workflow == w]
         for a in ALGOS:
             s = d[d.algorithm == a]
             c = STYLE[a][0]
-            ax.scatter(s.makespan, s.cost, marker=MARK[a], s=60 if a != 'LIWSA-ML' else 90, color=c,
+            ax.scatter(s.makespan, s.cost, marker=MARK[a], s=16 if a != 'LIWSA-ML' else 30, color=c,
                        edgecolor='black', linewidth=0.5, label=a, zorder=3)
         ax.set_title(t); ax.set_xlabel('Makespan (s)'); ax.set_ylabel('Cost')
         ax.ticklabel_format(style='sci', scilimits=(-2, 4)); ax.grid(lw=0.3, alpha=0.5)
     h, l = axes[0].get_legend_handles_labels()
-    fig.legend(h, l, loc='lower center', ncol=6, frameon=False, bbox_to_anchor=(0.5, -0.03))
-    fig.tight_layout(rect=(0, 0.06, 1, 1)); fig.savefig(out, bbox_inches='tight'); plt.close(fig)
+    fig.legend(h, l, loc='lower center', ncol=3, frameon=False, bbox_to_anchor=(0.5, -0.02))
+    fig.tight_layout(rect=(0, 0.14, 1, 1), w_pad=0.6); fig.savefig(out, bbox_inches='tight'); plt.close(fig)
 
 
 def fig_speedup(m, out):
     sp = m.groupby(['workflow', 'algorithm']).speedup.mean().unstack()
     ws = [w for f in FAMS for w in wf_of(m, f, True)]
-    fig, ax = plt.subplots(figsize=(8.9, 3.4)); x = np.arange(len(ws))
+    fig, ax = plt.subplots(figsize=(7.2, 2.5)); x = np.arange(len(ws))
     bars(ax, x, {a: sp.loc[ws, a].values for a in ALGOS}, ALGOS)
     ax.set_xticks(x); ax.set_xticklabels([f"{fam(w)}\n{size(w)}" for w in ws])
     ax.set_ylabel('Speedup vs sequential execution'); ax.set_title('Scheduling speedup on large workflow instances')
@@ -126,7 +129,7 @@ def fig_util(m, out):
     ut = m.groupby(['workflow', 'algorithm']).avg_utilization_pct.mean().unstack()
     fa = m.groupby(['workflow', 'algorithm']).fairness_index.mean().unstack()
     ws = ['Montage_100', 'CyberShake_50', 'Sipht_100', 'Epigenomics_997', 'Inspiral_1000']
-    fig, axes = plt.subplots(1, 2, figsize=(9.4, 3.5)); x = np.arange(len(ws))
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 2.5)); x = np.arange(len(ws))
     for ax, M, t, yl in [(axes[0], ut, 'VM resource utilisation', 'Avg utilisation (%)'),
                          (axes[1], fa, "Load-balancing fairness (descriptive)", "Fairness index")]:
         bars(ax, x, {a: M.loc[ws, a].values for a in ALGOS}, ALGOS)

@@ -1,13 +1,22 @@
 #!/bin/bash
-# Code Ocean entry point: runs every experiment of the paper, draws the figures, and copies
-# everything to Code Ocean's results tab (/results).
+# Code Ocean entry point: runs every experiment of the paper, draws every figure, recomputes every
+# statistic quoted in the paper, and copies everything to Code Ocean's results tab (/results).
 #
-#   Java : RunPaperExperiments  -> main benchmark, density ablation, OLS-vs-naive, lambda and theta
-#                                  sweeps, VM-pricing sensitivity (CSV files + summaries)
-#   Python: make_paper_figures.py -> the six result figures used in the paper
-#           generate_figures.py   -> additional figures and the all-algorithm summary tables
+#   Java  : RunPaperExperiments   (writes Output&Results/paper_*.csv and *_summary.txt)
+#             paper_main.csv              main benchmark, six algorithms, one planning-level hypervolume evaluator
+#             paper_variant_A/B.csv       component analysis (A = published LIWSA/LIWSA-ML, B = + external archive)
+#             paper_density_ablation.csv  measured density vs fixed mixing probability
+#             paper_naive.csv             OLS predictor vs naive duration/cost scoring
+#             paper_lambda.csv, paper_theta.csv   parameter sensitivity sweeps
+#             paper_pricing.csv           VM-pricing sensitivity
+#             paper_equal_time.csv        LIWSA-ML vs NSGA-II at matched wall-clock time (timing based)
+#   Python: paper_statistics.py   -> paper_statistics.txt: every hypervolume statistic of the paper (tables IV-VI,
+#                                    Wilcoxon/Holm tests, component analysis, ablations, sweeps, matched wall-clock)
+#           make_paper_figures.py -> the result figures used in the paper (PDF)
+#           generate_figures.py   -> additional per-file figures and the all-algorithm summary tables
 #
-# Set QUICK=1 (environment variable) for a two-workflow smoke test of the whole chain (about a minute).
+# Set QUICK=1 (environment variable) for a two-workflow smoke test of the whole chain (a few minutes).
+# The matched wall-clock step measures run time, so the full run should have the machine to itself.
 set -ex
 cd "$(dirname "$0")"
 
@@ -27,16 +36,19 @@ else
 fi
 
 # 3. FIRST COPY: put the CSV files and summaries into the results tab right away,
-#    so they are kept even if a later (plotting) step fails
+#    so they are kept even if a later (analysis or plotting) step fails
 cp -r "$OUT"/paper_* "$RESULTS"/
 
-# 4. Python: the paper's result figures, then the additional figures and summary tables.
-#    A failing plotting step must not lose the results already copied, so these two lines do not abort the run.
+# 4. Python: statistics quoted in the paper, then the paper figures, then additional figures and summary tables.
+#    A failing analysis step must not lose the results already copied, so these lines do not abort the run.
+python3 paper_statistics.py --dir "$OUT" || echo "WARNING: paper_statistics.py failed"
 python3 make_paper_figures.py "$OUT/paper_main.csv" --outdir "$OUT/paper_figures" || echo "WARNING: make_paper_figures.py failed"
-python3 generate_figures.py --all --outdir "$OUT/figures" || echo "WARNING: generate_figures.py failed"
+python3 generate_figures.py --all --outdir "$OUT/figures" || echo "WARNING: generate_figures.py --all failed"
+python3 summarize_results.py "$OUT/paper_main.csv" || echo "WARNING: summarize_results.py failed"
 
-# 5. SECOND COPY: figures (PDF and PNG) and the Python summary files
+# 5. SECOND COPY: statistics, figures (PDF and PNG) and the Python summary files
+cp "$OUT"/paper_statistics.txt "$RESULTS"/ 2>/dev/null || true
 [ -d "$OUT/paper_figures" ] && cp -r "$OUT/paper_figures" "$RESULTS"/
 [ -d "$OUT/figures" ]       && cp -r "$OUT/figures" "$RESULTS"/
-cp "$OUT"/paper_*_summary_py.txt "$RESULTS"/ 2>/dev/null || true
+cp "$OUT"/paper_*_summary*.txt "$RESULTS"/ 2>/dev/null || true
 echo "Done. Results copied to $RESULTS"

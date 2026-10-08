@@ -1,0 +1,4 @@
+algorithm,runs,generations,search_ms,front_size,hypervolume,hv_score_pct,hv_wins,hv_avg_rank
+LIWSA-ML_100gen,100,100.0000,199.3300,16.5200,71922408922.1845,98.59,9,1.900
+NSGA-II_100gen,100,100.0000,78.8600,26.9100,56405794724.0699,92.36,0,2.650
+NSGA-II_matchedTime,100,237.2500,199.3500,29.5900,57755550070.6096,94.77,11,1.450
