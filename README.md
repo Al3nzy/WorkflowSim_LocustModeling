@@ -145,7 +145,7 @@ LIWSA-ML exceeds HEFT, Min-Min, and MLEAO in mean hypervolume by 104.5%, 265.1%,
 On **data-intensive workflows** (Epigenomics, Inspiral at about 1000 tasks), LIWSA-ML reduces makespan and cost relative to HEFT at once (Epigenomics_997: -80.0% makespan, -9.8% cost), a pattern that stems from a structural HEFT weakness on large file transfers and is shared to some degree by all population-based algorithms.
 
 <p align="center">
-  <img src="Output%26Results/paper_figures/hypervolume_families.pdf" alt="Hypervolume by workflow family" width="800"><br>
+  <img src="Output%26Results/paper_figures/hypervolume_families.png" alt="Hypervolume by workflow family" width="800"><br>
   <sub><b>Fig. 1</b> - Hypervolume as a percentage of the best algorithm on each workflow, by family and scale (the paper's Fig. 2).</sub>
 </p>
 

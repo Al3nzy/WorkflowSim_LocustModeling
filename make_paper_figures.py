@@ -6,8 +6,8 @@ make_paper_figures.py -- regenerates the six result figures of the paper from th
                                                                     # writes to Output&Results/paper_figures
     python make_paper_figures.py "Output&Results/paper_main.csv" --outdir "Output&Results/paper_figures"
 
-Writes (PDF): hypervolume_families, makespan_vs_heft, cost_vs_heft, makespan_cost_scatter, speedup,
-utilization_fairness. Quote the path: the folder name contains an ampersand.
+Writes PDF and 300-DPI PNG versions of: hypervolume_families, makespan_vs_heft, cost_vs_heft,
+makespan_cost_scatter, speedup, utilization_fairness. Quote the path: the folder name contains an ampersand.
 Requires: pip install pandas matplotlib numpy
 """
 import argparse
@@ -60,6 +60,11 @@ def bars(ax, x, vals_by_alg, algos, width=None):
                edgecolor='black', linewidth=0.4)
 
 
+def save_figure(fig, out):
+    fig.savefig(out, bbox_inches='tight')
+    fig.savefig(os.path.splitext(out)[0] + '.png', dpi=300, bbox_inches='tight')
+
+
 def fig_hv(m, out):
     hv = m.groupby(['workflow', 'algorithm']).hypervolume.mean().unstack()
     hv = hv.div(hv.max(axis=1), axis=0) * 100          # percentage of the best algorithm on each workflow
@@ -74,7 +79,7 @@ def fig_hv(m, out):
         ax.grid(axis='y', lw=0.3, alpha=0.5)
     axes[0].set_ylabel('Hypervolume (% of best)')
     legend(fig, ALGOS, y=-0.04); fig.tight_layout(rect=(0, 0.07, 1, 1), w_pad=0.4)
-    fig.savefig(out, bbox_inches='tight'); plt.close(fig)
+    save_figure(fig, out); plt.close(fig)
 
 
 def fig_vs_heft(m, metric, ylabel, out):
@@ -94,7 +99,7 @@ def fig_vs_heft(m, metric, ylabel, out):
             if j == 0:
                 ax.set_ylabel(f"{ylabel}\n({'~1000 tasks' if large else '24-100 tasks'})")
     legend(fig, algos, y=-0.03); fig.tight_layout(rect=(0, 0.05, 1, 1), w_pad=0.4, h_pad=0.6)
-    fig.savefig(out, bbox_inches='tight'); plt.close(fig)
+    save_figure(fig, out); plt.close(fig)
 
 
 def fig_scatter(m, out):
@@ -111,7 +116,7 @@ def fig_scatter(m, out):
         ax.ticklabel_format(style='sci', scilimits=(-2, 4)); ax.grid(lw=0.3, alpha=0.5)
     h, l = axes[0].get_legend_handles_labels()
     fig.legend(h, l, loc='lower center', ncol=3, frameon=False, bbox_to_anchor=(0.5, -0.02))
-    fig.tight_layout(rect=(0, 0.14, 1, 1), w_pad=0.6); fig.savefig(out, bbox_inches='tight'); plt.close(fig)
+    fig.tight_layout(rect=(0, 0.14, 1, 1), w_pad=0.6); save_figure(fig, out); plt.close(fig)
 
 
 def fig_speedup(m, out):
@@ -123,7 +128,7 @@ def fig_speedup(m, out):
     ax.set_ylabel('Speedup vs sequential execution'); ax.set_title('Scheduling speedup on large workflow instances')
     ax.grid(axis='y', lw=0.3, alpha=0.5)
     legend(fig, ALGOS, y=-0.04); fig.tight_layout(rect=(0, 0.06, 1, 1))
-    fig.savefig(out, bbox_inches='tight'); plt.close(fig)
+    save_figure(fig, out); plt.close(fig)
 
 
 def fig_util(m, out):
@@ -137,7 +142,7 @@ def fig_util(m, out):
         ax.set_xticks(x); ax.set_xticklabels([f"{fam(w)}\n{size(w)}" for w in ws])
         ax.set_title(t); ax.set_ylabel(yl); ax.grid(axis='y', lw=0.3, alpha=0.5)
     legend(fig, ALGOS, y=-0.04); fig.tight_layout(rect=(0, 0.06, 1, 1))
-    fig.savefig(out, bbox_inches='tight'); plt.close(fig)
+    save_figure(fig, out); plt.close(fig)
 
 
 def main():
