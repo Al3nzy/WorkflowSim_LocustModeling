@@ -1,7 +1,9 @@
 #!/bin/bash
 # Code Ocean entry point: runs every experiment of the paper, draws every figure, recomputes every
 # statistic quoted in the paper, and copies everything to Code Ocean's results tab (/results).
-#
+# 
+# The code to run the experiments is in Java, the analysis and plotting code is in Python Using VS Code. 
+#  java -cp "bin;lib/*" org.workflowsim.examples.planning.RunPaperExperiments; python paper_statistics.py; python make_paper_figures.py; python generate_figures.py --all; python summarize_results.py; 
 #   Java  : RunPaperExperiments   (writes Output&Results/paper_*.csv and *_summary.txt)
 #             paper_main.csv              main benchmark, six algorithms, one planning-level hypervolume evaluator
 #             paper_variant_A/B.csv       component analysis (A = published LIWSA/LIWSA-ML, B = + external archive)

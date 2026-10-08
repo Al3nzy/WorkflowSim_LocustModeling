@@ -93,6 +93,6 @@ public class RunPaperExperiments {
         System.out.println("#".repeat(78));
         EqualTimeBenchmark.main(new String[]{which, "1,2,3,4,5", eq});
         System.out.println();
-        System.out.println("ALL STEPS DONE. Please zip the folder \"" + ResultsPaths.OUTPUT_DIR + "\" and send it.");
+        System.out.println("ALL STEPS DONE. Results are in Output&Results/ Results. ");
     }
 }

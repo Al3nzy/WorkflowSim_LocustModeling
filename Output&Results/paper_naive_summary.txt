@@ -7,7 +7,7 @@ algorithm           runs    makespan        cost  front_size hypervolume      ut
 HEFT                   5    8163.668       46306       1.000   818427064      51.138       0.706       5.095        0.00        0.09     72.9     0     3.00
 Min-Min                5       13961       48343       1.000   452679746      47.054       0.809       3.321        0.00        0.09     26.3     0     4.00
 LIWSA-ML              25    9411.161       46231      20.320  1192480817      46.893       0.682       4.766        0.06        0.15     99.3     4     1.20
-LIWSA-ML-Naive        25    9508.531       46165      21.160  1141937880      48.082       0.671       4.934        0.05        0.14     95.1     1     1.80
+LIWSA-ML-Naive        25    9508.531       46165      21.160  1141937880      48.082       0.671       4.934        0.04        0.13     95.1     1     1.80
 HVscore = hypervolume as % of the best algorithm on each workflow, averaged over workflows.
 
 Mean hypervolume per workflow (best in each row marked *)

@@ -3,7 +3,8 @@
 make_paper_figures.py -- regenerates the six result figures of the paper from the final results CSV.
 
     python make_paper_figures.py                                  # reads Output&Results/paper_main.csv
-    python make_paper_figures.py "Output&Results/paper_main.csv" --outdir figs
+                                                                    # writes to Output&Results/paper_figures
+    python make_paper_figures.py "Output&Results/paper_main.csv" --outdir "Output&Results/paper_figures"
 
 Writes (PDF): hypervolume_families, makespan_vs_heft, cost_vs_heft, makespan_cost_scatter, speedup,
 utilization_fairness. Quote the path: the folder name contains an ampersand.
@@ -142,7 +143,7 @@ def fig_util(m, out):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('csv', nargs='?', default=os.path.join(OUTPUT_DIR, 'paper_main.csv'))
-    ap.add_argument('--outdir', default='figs')
+    ap.add_argument('--outdir', default=os.path.join(OUTPUT_DIR, 'paper_figures'))
     a = ap.parse_args()
     m = pd.read_csv(a.csv)
     os.makedirs(a.outdir, exist_ok=True)

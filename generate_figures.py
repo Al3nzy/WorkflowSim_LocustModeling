@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-r"""
+"""
 generate_figures.py -- figures (and a summary table) for the WorkflowSim_LocustModeling results.
 
 Reads any CSV written by the Java programs (workflow,algorithm,seed,makespan,cost,
