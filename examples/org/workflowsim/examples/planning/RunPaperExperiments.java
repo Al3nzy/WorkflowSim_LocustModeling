@@ -22,6 +22,7 @@ package org.workflowsim.examples.planning;
  *   1. main benchmark, all workflows          -> paper_main.csv
  *   1b. component variants A and B             -> paper_variant_A.csv, paper_variant_B.csv
  *   2. density ablation, all workflows         -> paper_density_ablation.csv
+ *   2b. NSGA-II with the external archive      -> paper_nsga2_archive.csv
  *   3. OLS vs naive features (5 workflows)     -> paper_naive.csv
  *   4. phase-mixing weight sweep (5 workflows) -> paper_lambda.csv
  *   5. softmax-temperature sweep (5 workflows) -> paper_theta.csv
@@ -52,6 +53,7 @@ public class RunPaperExperiments {
             {"benchmark", which, "paper_variant_A.csv", "", "A"},
             {"benchmark", which, "paper_variant_B.csv", "", "B"},
             {"benchmark", which, "paper_density_ablation.csv", "ablation", "C"},
+            {"benchmark", which, "paper_nsga2_archive.csv", "", "C"},
             {"sens", five, "paper_naive.csv", "naive", "C"},
             {"sens", five, "paper_lambda.csv", "lambda", "C"},
             {"sens", five, "paper_theta.csv", "theta", "C"}};
@@ -63,6 +65,8 @@ public class RunPaperExperiments {
             System.out.println("# STEP: " + st[2]);
             System.out.println("#".repeat(78));
             ResultsPaths.applyVariant(st[4]);
+            // control run: the same external archive attached to NSGA-II (off in every other step)
+            org.workflowsim.planning.NSGAIIPlanningAlgorithm.CONFIG_OUTPUT_ARCHIVE = st[2].equals("paper_nsga2_archive.csv");
             if (st[0].equals("benchmark")) {
                 if (st[3].isEmpty()) {
                     LIWSABenchmarkExample.main(new String[]{st[1], csv});

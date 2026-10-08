@@ -25,3 +25,10 @@ Notes
 - Absolute search times depend on the machine (the shipped results were produced on a single-core container).
 - `paper_pricing.csv` was produced before the common-evaluator change and scores HEFT by its simulator point;
   only the LIWSA-ML / NSGA-II ratio in that table is used in the paper.
+
+Second hardening pass
+- `RunPaperExperiments.java`: new control step `paper_nsga2_archive.csv` (the same external archive attached to NSGA-II);
+  `paper_statistics.py` reports it (NSGA-II hypervolume changes by at most 0.05% per run).
+- Front size is defined per algorithm: external archive (distinct objective vectors) for LIWSA/LIWSA-ML,
+  non-dominated members of the final population for MLEAO/NSGA-II, 1 for HEFT/Min-Min.
+- Matched wall-clock results are described as "approximately matched" (17 of 20 workflows within 10% of LIWSA-ML's time).

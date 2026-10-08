@@ -125,7 +125,7 @@ A standard, faithful implementation (Deb et al., 2002): fast non-dominated sorti
 
 All six algorithms are scored by **one planning-level evaluator**: the hypervolume of every algorithm, HEFT and Min-Min included, is computed from decoder objective values (set `-Dliwsa.planningLevelBaselines=false` to restore the earlier simulator-measured HEFT/Min-Min point). Simulator-measured makespan and cost of the committed schedules are reported alongside. `python3 paper_statistics.py` recomputes every number below from the CSV files.
 
-| Algorithm | HV score (% of best) | Highest HV on | Mean rank | Mean front size | Search time per run |
+| Algorithm | HV score (% of best) | Highest HV on | Mean rank | Mean front size (archive for LIWSA variants, final-population front for MLEAO/NSGA-II) | Search time per run |
 |-----------|---------------------:|:-------------:|:---------:|:---------------:|:-------------------:|
 | HEFT | 71.0 | 0 | 5.08 | 1.0 | no search |
 | Min-Min | 35.2 | 0 | 5.90 | 1.0 | no search |
@@ -136,7 +136,9 @@ All six algorithms are scored by **one planning-level evaluator**: the hypervolu
 
 LIWSA-ML exceeds HEFT, Min-Min, and MLEAO in mean hypervolume by 104.5%, 265.1%, and 21.4% (higher on all 20 workflows), LIWSA by 10.1% (17 of 20), and NSGA-II by 8.1% (14 of 20, Wilcoxon p = 0.024, Holm-adjusted). The difference depends on scale: on the five workflows of about 1000 tasks LIWSA-ML is higher on every one (+28.6% on average), and on the 15 workflows of 24 to 100 tasks the two are within 1.3% (higher on 9 of 15, p = 0.42). LIWSA-ML needs about 2.3x NSGA-II's search time (timing measured on a single-core container; hardware dependent).
 
-**Matched wall-clock time.** With NSGA-II given as many generations as fit into LIWSA-ML's search time (347 on average, total time 100.5% of LIWSA-ML's), NSGA-II is 2.2% ahead on the 15 smaller workflows (LIWSA-ML higher on 3 of 15) and LIWSA-ML is 22.1% ahead on the five largest (higher on all five). Over all 20 workflows the difference is not significant (+3.8%, p = 0.81). Reproduce with `EqualTimeBenchmark` (part of `RunPaperExperiments`).
+**Objective evaluations per run:** LIWSA 2930, NSGA-II 3030, LIWSA-ML 3366 (the 2930 of LIWSA, 400 simulator-generated OLS training decodes, and 36 online-learning immigrant decodes).
+
+**Approximately matched wall-clock time.** With NSGA-II given as many generations as fit into LIWSA-ML's search time (347 on average; total search time 100.5% of LIWSA-ML's, within 10% per workflow on 17 of 20), NSGA-II is 2.2% ahead on the 15 smaller workflows (LIWSA-ML higher on 3 of 15) and LIWSA-ML is 22.1% ahead on the five largest (higher on all five). Over all 20 workflows the difference is not significant (+3.8%, p = 0.81). Reproduce with `EqualTimeBenchmark` (part of `RunPaperExperiments`).
 
 **Component analysis** (hypervolume relative to NSGA-II): the external archive adds 7.6 percentage points to LIWSA-ML (19 of 20 workflows improved) and online learning a further 1.6 (18 of 20). The archive and online learning were developed on the 15 workflows of 24-100 tasks (online learning on the five where the earlier LIWSA-ML trailed NSGA-II most, ten others as a check); no workflow of about 1000 tasks was used in development. See the manuscript's Algorithm Parameters section and Supplementary S14.
 
@@ -151,6 +153,7 @@ On **data-intensive workflows** (Epigenomics, Inspiral at about 1000 tasks), LIW
 
 | Experiment | Finding |
 |---|---|
+| **NSGA-II with the same archive** | Hypervolume changes by at most 0.05% per run (front size 26.9 to 18.6 after duplicate removal); the archive asymmetry does not affect the comparison. |
 | **Density ablation** (`LIWSA` vs `LIWSA-NoDensity`, density fixed at 0.5) | Measured density adds no hypervolume (-0.07% mean, higher on 8 of 20 workflows, p = 0.73); its benefit is self-calibration of the phase mixing, with no mixing value to choose. |
 | **lambda sensitivity** (phase-mixing weight, 0.1-0.9) | Low sensitivity: hypervolume varies by 2.0% on average across values (at most 4.0%); no value changes the mean by more than 0.8% relative to the default. |
 | **theta sensitivity** (softmax temperature, 0.1-0.9) | Low sensitivity: 1.2% on average (at most 3.1%); no value changes the mean by more than 0.7%. |

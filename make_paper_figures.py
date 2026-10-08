@@ -79,7 +79,7 @@ def fig_hv(m, out):
 def fig_vs_heft(m, metric, ylabel, out):
     mean = m.groupby(['workflow', 'algorithm'])[metric].mean().unstack()
     algos = [a for a in ALGOS if a != 'HEFT']
-    fig, axes = plt.subplots(2, 5, figsize=(7.2, 3.1))
+    fig, axes = plt.subplots(2, 5, figsize=(7.2, 2.6))
     for j, f in enumerate(FAMS):
         for i, large in enumerate([False, True]):
             ax = axes[i][j]; ws = wf_of(m, f, large); x = np.arange(len(ws))

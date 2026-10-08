@@ -78,6 +78,13 @@ Dn = load('paper_density_ablation.csv')
 if Dn is not None:
     h = pd.DataFrame({'L': inst(Dn, 'LIWSA'), 'N': inst(Dn, 'LIWSA-NoDensity')}); d = rel(h.L, h.N)
     P('\n== Density ablation (LIWSA vs LIWSA-NoDensity) ==\nmean %+.3f%% higher with density %d/%d  p=%.3g' % (d.mean(), (d > 0).sum(), len(d), wp(h.L, h.N)))
+NA = load('paper_nsga2_archive.csv')
+if NA is not None:
+    h = pd.DataFrame({al: inst(NA, al) for al in ALGS}); d = rel(h['LIWSA-ML'], h['NSGA-II'])
+    P('\n== NSGA-II with the same external archive (control) ==\nLIWSA-ML vs NSGA-II+archive: mean %+.2f%% median %+.2f%% higher %d/%d p=%.3g; NSGA-II mean front size %.1f' % (d.mean(), d.median(), (d > 0).sum(), len(d), wp(h['LIWSA-ML'], h['NSGA-II']), NA[NA.algorithm == 'NSGA-II'].pareto_front_size.mean()))
+    if C is not None:
+        a_ = NA[NA.algorithm == 'NSGA-II'].set_index(['workflow', 'seed']).hypervolume; c_ = C[C.algorithm == 'NSGA-II'].set_index(['workflow', 'seed']).hypervolume
+        P('max relative hypervolume change of NSGA-II per run when the archive is attached: %.4f%%' % ((a_ / c_ - 1).abs().max() * 100))
 N = load('paper_naive.csv')
 if N is not None:
     h = pd.DataFrame({'ML': inst(N, 'LIWSA-ML'), 'Nv': inst(N, 'LIWSA-ML-Naive')}); d = rel(h.ML, h.Nv)
